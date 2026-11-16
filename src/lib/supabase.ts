@@ -1,7 +1,8 @@
 import type { FeedItem } from "./crawler";
 
-const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -9,23 +10,17 @@ export function isSupabaseConfigured(): boolean {
 
 export async function isMemoryStale(_topic: string, maxAgeMinutes = 60): Promise<boolean> {
   if (!isSupabaseConfigured()) return true;
-
   try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/articles?select=created_at&order=created_at.desc&limit=1`,
-      {
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${supabaseAnonKey}`,
-        },
-        cache: "no-store",
-      }
-    );
-
+    const res = await fetch(`${supabaseUrl}/rest/v1/articles?select=created_at&order=created_at.desc&limit=1`, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+      cache: "no-store",
+    });
     if (!res.ok) return true;
     const data = await res.json();
     if (!data || data.length === 0) return true;
-
     const lastUpdated = new Date(data[0].created_at).getTime();
     return (Date.now() - lastUpdated) / (1000 * 60) > maxAgeMinutes;
   } catch {
@@ -35,6 +30,9 @@ export async function isMemoryStale(_topic: string, maxAgeMinutes = 60): Promise
 
 export async function saveArticlesToMemory(items: FeedItem[], _topic: string): Promise<void> {
   if (!isSupabaseConfigured() || items.length === 0) return;
+
+  // Use service role key for server-side writes to bypass RLS, fallback to anon key if not set
+  const writeKey = supabaseServiceKey || supabaseAnonKey;
 
   const rows = items.map((item) => ({
     id: item.id,
@@ -52,8 +50,8 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
     const res = await fetch(`${supabaseUrl}/rest/v1/articles`, {
       method: "POST",
       headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        apikey: writeKey,
+        Authorization: `Bearer ${writeKey}`,
         "Content-Type": "application/json",
         Prefer: "resolution=merge-conflict",
       },
