@@ -1,209 +1,261 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
-  Atom,
-  BookOpen,
-  ExternalLink,
-  Newspaper,
-  RefreshCw,
   Search,
+  RefreshCw,
+  ExternalLink,
   Sparkles,
+  Newspaper,
+  BookOpen,
+  Radar,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 
-// Embedded types & topic definitions so this file is 100% self-contained
-export type ArticleCategory = "news" | "research";
-
-export interface NewsArticle {
+interface FutureTopic {
   id: string;
-  topicId: string;
-  topicName: string;
-  badgeColor: string;
-  category: ArticleCategory;
-  title: string;
-  summary: string;
-  source: string;
-  url: string;
-  publishedAt: string;
+  label: string;
+  shortLabel: string;
+  description: string;
+  newsQuery: string;
+  arxivQuery: string;
 }
 
-export interface FutureTopic {
+interface FeedItem {
   id: string;
-  shortName: string;
-  name: string;
-  description: string;
+  title: string;
+  summary: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  topicId: string;
+  topicLabel: string;
+  category: "news" | "research";
 }
 
 const FUTURE_TOPICS: FutureTopic[] = [
   {
-    id: "agentic-ai",
-    shortName: "Agentic AI",
-    name: "Generative & Agentic AI",
+    id: "generative-agentic-ai",
+    label: "Generative & Agentic AI",
+    shortLabel: "Agentic AI",
     description: "Autonomous AI agents, reasoning models, and enterprise GenAI deployments.",
+    newsQuery: '"agentic AI" OR "generative AI" enterprise',
+    arxivQuery: 'all:"agentic AI" OR all:"large language model" reasoning',
   },
   {
-    id: "quantum",
-    shortName: "Quantum",
-    name: "Quantum Computing",
+    id: "quantum-computing",
+    label: "Quantum Computing",
+    shortLabel: "Quantum",
     description: "Qubit scaling, fault-tolerant architectures, and quantum advantage.",
+    newsQuery: '"quantum computing" breakthrough OR business',
+    arxivQuery: 'cat:quant-ph AND (all:"quantum computing" OR all:"fault-tolerant")',
   },
   {
-    id: "neuromorphic",
-    shortName: "Neuromorphic",
-    name: "Neuromorphic Computing",
+    id: "neuromorphic-computing",
+    label: "Neuromorphic Computing",
+    shortLabel: "Neuromorphic",
     description: "Brain-inspired spiking neural networks and ultra-low-power silicon.",
+    newsQuery: '"neuromorphic computing" OR "neuromorphic chip"',
+    arxivQuery: 'all:"neuromorphic computing" OR all:"spiking neural network"',
   },
   {
     id: "hyperautomation",
-    shortName: "Hyperautomation",
-    name: "Hyperautomation",
-    description: "End-to-end intelligent process automation, RPA, and autonomous workflows.",
+    label: "Hyperautomation",
+    shortLabel: "Hyperautomation",
+    description: "End-to-end AI process orchestration, RPA, and autonomous workflows.",
+    newsQuery: 'hyperautomation OR "intelligent automation" enterprise',
+    arxivQuery: 'all:"process automation" AND all:"artificial intelligence"',
   },
   {
-    id: "autonomous-ev",
-    shortName: "Autonomous EV",
-    name: "Autonomous Vehicles",
-    description: "Self-driving fleets, LiDAR/vision stacks, and autonomous logistics.",
+    id: "autonomous-vehicles",
+    label: "Autonomous Vehicles",
+    shortLabel: "Autonomous EV",
+    description: "Self-driving fleets, robotaxis, and spatial perception systems.",
+    newsQuery: '"autonomous vehicles" OR robotaxi deployment',
+    arxivQuery: 'all:"autonomous driving" OR all:"self-driving"',
   },
   {
-    id: "batteries",
-    shortName: "Batteries",
-    name: "Battery Technologies",
-    description: "Solid-state cells, sodium-ion storage, and high-density grid batteries.",
+    id: "battery-technologies",
+    label: "Battery Technologies",
+    shortLabel: "Batteries",
+    description: "Solid-state cells, sodium-ion storage, and grid-scale energy density.",
+    newsQuery: '"solid-state battery" OR "battery technology" breakthrough',
+    arxivQuery: 'all:"solid-state battery" OR all:"lithium-ion" energy storage',
   },
   {
-    id: "synbio",
-    shortName: "SynBio",
-    name: "Synthetic Biology",
+    id: "synthetic-biology",
+    label: "Synthetic Biology",
+    shortLabel: "SynBio",
     description: "Programmable organisms, biodesign, and sustainable biomanufacturing.",
+    newsQuery: '"synthetic biology" OR biomanufacturing',
+    arxivQuery: 'all:"synthetic biology" OR all:"metabolic engineering"',
   },
   {
-    id: "bcis",
-    shortName: "BCIs",
-    name: "Brain-Computer Interfaces (BCIs)",
+    id: "brain-computer-interfaces",
+    label: "Brain-Computer Interfaces (BCIs)",
+    shortLabel: "BCIs",
     description: "Neural implants, non-invasive neurotech, and cognitive decoding.",
+    newsQuery: '"brain-computer interface" OR neurotechnology',
+    arxivQuery: 'all:"brain-computer interface" OR all:"neural decoding"',
   },
   {
     id: "digital-trust",
-    shortName: "Digital Trust",
-    name: "Digital Trust Technologies",
+    label: "Digital Trust Technologies",
+    shortLabel: "Digital Trust",
     description: "Post-quantum cryptography, zero-knowledge proofs, and AI provenance.",
+    newsQuery: '"post-quantum cryptography" OR "digital trust" OR "zero trust"',
+    arxivQuery: 'all:"post-quantum cryptography" OR all:"zero-knowledge"',
   },
   {
-    id: "zero-latency",
-    shortName: "6G & Edge",
-    name: "Zero-Latency Connectivity",
-    description: "6G networks, satellite-to-cell constellations, and deterministic edge.",
+    id: "zero-latency-connectivity",
+    label: "Zero-Latency Connectivity",
+    shortLabel: "6G & Edge",
+    description: "6G wireless research, satellite-to-cell, and deterministic edge networks.",
+    newsQuery: '"6G" wireless OR "low-latency" satellite connectivity',
+    arxivQuery: 'all:"6G" AND (all:"wireless" OR all:"ultra-low latency")',
   },
   {
-    id: "voice-ai",
-    shortName: "Voice AI",
-    name: "Voice-Activated Technology",
-    description: "Real-time conversational speech models and ambient voice interfaces.",
+    id: "voice-activated-tech",
+    label: "Voice-Activated Technology",
+    shortLabel: "Voice AI",
+    description: "Real-time conversational voice agents and multimodal audio interfaces.",
+    newsQuery: '"voice AI" OR "conversational AI" voice agent',
+    arxivQuery: 'all:"speech synthesis" OR all:"spoken dialogue" LLM',
   },
   {
-    id: "fusion",
-    shortName: "Fusion",
-    name: "Nuclear Fusion",
-    description: "Magnetic & inertial confinement breakthroughs toward net energy gain.",
+    id: "nuclear-fusion",
+    label: "Nuclear Fusion",
+    shortLabel: "Fusion",
+    description: "Magnetic confinement, inertial fusion milestones, and commercial reactors.",
+    newsQuery: '"nuclear fusion" energy breakthrough OR reactor',
+    arxivQuery: 'all:"nuclear fusion" OR all:"tokamak" plasma',
   },
   {
-    id: "preventive-med",
-    shortName: "Preventive Med",
-    name: "Preventive Medicine & Wellbeing",
-    description: "Longevity therapeutics, multi-omics diagnostics, and continuous biomarkers.",
+    id: "preventive-medicine",
+    label: "Preventive Medicine & Wellbeing",
+    shortLabel: "Preventive Med",
+    description: "AI diagnostics, longevity biomarkers, and personalized genomics.",
+    newsQuery: '"preventive medicine" AI OR longevity biotech',
+    arxivQuery: 'all:"precision medicine" OR all:"biomarker" machine learning',
   },
   {
     id: "climate-tech",
-    shortName: "Climate Tech",
-    name: "Climate Tech",
-    description: "Direct air carbon capture, green hydrogen, and industrial decarbonization.",
+    label: "Climate Tech",
+    shortLabel: "Climate Tech",
+    description: "Direct air capture, green hydrogen, and industrial decarbonization.",
+    newsQuery: '"climate tech" OR "carbon capture" OR "green hydrogen"',
+    arxivQuery: 'all:"carbon capture" OR all:"decarbonization" energy',
   },
   {
-    id: "space-tech",
-    shortName: "Space Tech",
-    name: "Space Exploration",
-    description: "Reusable heavy-lift rockets, orbital manufacturing, and lunar infrastructure.",
+    id: "space-exploration",
+    label: "Space Exploration",
+    shortLabel: "Space Tech",
+    description: "Reusable launch vehicles, orbital infrastructure, and lunar economy.",
+    newsQuery: '"space exploration" OR "commercial space" launch',
+    arxivQuery: 'cat:astro-ph.IM OR all:"spacecraft" propulsion',
   },
   {
-    id: "nanotech",
-    shortName: "Nanotech",
-    name: "Nanotechnology",
-    description: "Metamaterials, graphene electronics, and targeted nanomedicine delivery.",
+    id: "nanotechnology",
+    label: "Nanotechnology",
+    shortLabel: "Nanotech",
+    description: "Metamaterials, carbon nanotubes, and nanoscale drug delivery.",
+    newsQuery: 'nanotechnology breakthrough OR nanomaterials',
+    arxivQuery: 'all:"nanotechnology" OR all:"nanomaterials" application',
   },
 ];
 
+function formatDate(dateString: string) {
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return "Recent";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "Recent";
+  }
+}
+
 export default function HomePage() {
+  const [articles, setArticles] = useState<FeedItem[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<string>("all");
-  const [selectedType, setSelectedType] = useState<"all" | ArticleCategory>("all");
+  const [selectedCategory, setSelectedCategory] = useState<"all" | "news" | "research">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [crawledAt, setCrawledAt] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Fetch live articles from the /api/news route with cache-busting & request cancellation
-  async function fetchFeed(topic: string, type: "all" | ArticleCategory) {
-    abortRef.current?.abort();
+  const fetchArticles = useCallback(async (topicId: string, category: "all" | "news" | "research") => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
     const controller = new AbortController();
     abortRef.current = controller;
 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/news?topic=${encodeURIComponent(topic)}&type=${encodeURIComponent(type)}&_t=${Date.now()}`,
-        {
-          cache: "no-store",
-          signal: controller.signal,
-        }
-      );
-      if (!res.ok) throw new Error("Failed to load feed");
+      const params = new URLSearchParams();
+      params.set("topic", topicId);
+      params.set("type", category);
+      params.set("_t", String(Date.now()));
+
+      const res = await fetch(`/api/news?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
       const data = await res.json();
-      setArticles(data.articles ?? []);
-      setCrawledAt(data.crawledAt ?? null);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      setError("Could not crawl live sources right now. Please try refreshing.");
+      setArticles(data.articles || []);
+      setUpdatedAt(data.updatedAt || null);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError("Unable to crawl live sources right now. Please try refreshing.");
     } finally {
-      if (abortRef.current === controller) {
+      if (!controller.signal.aborted) {
         setLoading(false);
       }
     }
-  }
+  }, []);
 
   useEffect(() => {
-    fetchFeed(selectedTopic, selectedType);
-    return () => abortRef.current?.abort();
-  }, [selectedTopic, selectedType]);
+    fetchArticles(selectedTopic, selectedCategory);
+  }, [selectedTopic, selectedCategory, fetchArticles]);
 
-  // Client-side filtering ensures topic, category, and search always match immediately
+  const activeTopicObj = useMemo(
+    () => FUTURE_TOPICS.find((t) => t.id === selectedTopic),
+    [selectedTopic]
+  );
+
   const filteredArticles = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return articles.filter((a) => {
-      if (selectedTopic !== "all" && a.topicId !== selectedTopic) return false;
-      if (selectedType !== "all" && a.category !== selectedType) return false;
-      if (!q) return true;
-      return (
-        a.title.toLowerCase().includes(q) ||
-        a.summary.toLowerCase().includes(q) ||
-        a.source.toLowerCase().includes(q) ||
-        a.topicName.toLowerCase().includes(q)
-      );
+    return articles.filter((item) => {
+      if (selectedTopic !== "all" && item.topicId !== selectedTopic) {
+        return false;
+      }
+      if (selectedCategory !== "all" && item.category !== selectedCategory) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          item.title.toLowerCase().includes(q) ||
+          item.summary.toLowerCase().includes(q) ||
+          item.source.toLowerCase().includes(q) ||
+          item.topicLabel.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+      }
+      return true;
     });
-  }, [articles, selectedTopic, selectedType, searchQuery]);
-
-  const activeTopicObj = FUTURE_TOPICS.find((t) => t.id === selectedTopic);
+  }, [articles, selectedTopic, selectedCategory, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100">
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-[#090d16]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <div className="min-h-screen flex flex-col">
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-[#070b14]/85 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30">
-              <Atom className="h-5 w-5" />
+            <div className="h-10 w-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+              <Radar className="w-5 h-5" />
             </div>
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-white">
@@ -215,186 +267,199 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 sm:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter headlines or sources..."
-                className="w-full rounded-lg border border-slate-800 bg-slate-900/90 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-slate-900/90 border border-slate-800 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <button
-              onClick={() => fetchFeed(selectedTopic, selectedType)}
+              type="button"
+              onClick={() => fetchArticles(selectedTopic, selectedCategory)}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition"
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {/* Category Tabs & Status */}
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex rounded-lg border border-slate-800 bg-slate-900/80 p-1">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Category Tabs + Status */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="inline-flex p-1 rounded-xl bg-slate-900 border border-slate-800 self-start">
             <button
-              onClick={() => setSelectedType("all")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                selectedType === "all"
+              type="button"
+              onClick={() => setSelectedCategory("all")}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                selectedCategory === "all"
                   ? "bg-indigo-600 text-white"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5" />
+              <Sparkles className="w-3.5 h-3.5" />
               All Updates
             </button>
             <button
-              onClick={() => setSelectedType("news")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                selectedType === "news"
+              type="button"
+              onClick={() => setSelectedCategory("news")}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                selectedCategory === "news"
                   ? "bg-indigo-600 text-white"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Newspaper className="h-3.5 w-3.5" />
+              <Newspaper className="w-3.5 h-3.5" />
               News & Business
             </button>
             <button
-              onClick={() => setSelectedType("research")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                selectedType === "research"
+              type="button"
+              onClick={() => setSelectedCategory("research")}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                selectedCategory === "research"
                   ? "bg-indigo-600 text-white"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <BookOpen className="h-3.5 w-3.5" />
+              <BookOpen className="w-3.5 h-3.5" />
               Research & Breakthroughs
             </button>
           </div>
 
-          <div className="text-xs text-slate-400">
-            {loading
-              ? "Crawling live feeds..."
-              : `${filteredArticles.length} articles${
-                  crawledAt
-                    ? ` · Updated ${new Date(crawledAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}`
-                    : ""
-                }`}
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            <span>{filteredArticles.length} articles</span>
+            {updatedAt && (
+              <span className="inline-flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                Updated {new Date(updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* 16 Future Technology Filter Pills */}
-        <div className="mb-6 flex flex-wrap gap-2">
+        {/* 16 Technology Topic Pills */}
+        <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             onClick={() => setSelectedTopic("all")}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
               selectedTopic === "all"
-                ? "border-indigo-500 bg-indigo-500/20 text-indigo-200"
-                : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                ? "bg-indigo-500/20 border-indigo-500 text-indigo-300"
+                : "bg-slate-900/70 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
             }`}
           >
             All 16 Technologies
           </button>
           {FUTURE_TOPICS.map((topic) => (
             <button
+              type="button"
               key={topic.id}
               onClick={() => setSelectedTopic(topic.id)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
                 selectedTopic === topic.id
-                  ? "border-indigo-500 bg-indigo-500/20 text-indigo-200"
-                  : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                  ? "bg-indigo-500/20 border-indigo-500 text-indigo-300"
+                  : "bg-slate-900/70 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
               }`}
             >
-              {topic.shortName}
+              {topic.shortLabel}
             </button>
           ))}
         </div>
 
-        {/* Selected Topic Banner */}
+        {/* Active Topic Banner */}
         {activeTopicObj && (
-          <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <h2 className="text-base font-semibold text-white">
-              {activeTopicObj.name}
-            </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              {activeTopicObj.description}
-            </p>
+          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-white">{activeTopicObj.label}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{activeTopicObj.description}</p>
+            </div>
           </div>
         )}
 
         {/* Error State */}
         {error && (
-          <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">
-            {error}
+          <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Loading Skeleton */}
+        {/* Loading Skeletons */}
         {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, idx) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
               <div
-                key={idx}
-                className="h-48 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60 p-5"
-              />
+                key={i}
+                className="h-48 rounded-xl bg-slate-900/50 border border-slate-800/80 p-5 animate-pulse flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="h-4 w-24 bg-slate-800 rounded" />
+                  <div className="h-5 w-full bg-slate-800 rounded" />
+                  <div className="h-4 w-3/4 bg-slate-800 rounded" />
+                </div>
+                <div className="h-3 w-32 bg-slate-800 rounded" />
+              </div>
             ))}
           </div>
         ) : filteredArticles.length === 0 ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
-            No articles matched your filter. Try clearing the search box or clicking Refresh.
+          <div className="text-center py-16 border border-dashed border-slate-800 rounded-2xl">
+            <p className="text-slate-400 text-sm">
+              No articles matched your current filters. Try clearing the search box or clicking Refresh.
+            </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          /* Articles Grid */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredArticles.map((article) => (
               <a
                 key={article.id}
                 href={article.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex flex-col justify-between rounded-xl border border-slate-800/90 bg-slate-900/60 p-5 transition hover:border-indigo-500/50 hover:bg-slate-900"
+                className="group flex flex-col justify-between rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800/90 hover:border-indigo-500/50 p-5 transition"
               >
                 <div>
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${article.badgeColor}`}
-                    >
-                      {article.topicName}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                      {article.topicLabel}
                     </span>
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    <span
+                      className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        article.category === "research"
+                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                      }`}
+                    >
                       {article.category === "research" ? "Research" : "News"}
                     </span>
                   </div>
 
-                  <h3 className="line-clamp-3 text-sm font-semibold leading-snug text-slate-100 group-hover:text-indigo-300">
+                  <h3 className="text-sm font-semibold text-slate-100 group-hover:text-indigo-300 transition line-clamp-2 leading-snug">
                     {article.title}
                   </h3>
 
-                  <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-400">
-                    {article.summary}
-                  </p>
+                  {article.summary && (
+                    <p className="mt-2 text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                      {article.summary}
+                    </p>
+                  )}
                 </div>
 
-                <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs text-slate-500">
-                  <span className="truncate font-medium text-slate-400">
+                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
+                  <span className="truncate max-w-[160px] font-medium text-slate-400">
                     {article.source}
                   </span>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <span>
-                      {new Date(article.publishedAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                    <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-indigo-400" />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span>{formatDate(article.publishedAt)}</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition" />
                   </div>
                 </div>
               </a>
