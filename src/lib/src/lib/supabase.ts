@@ -1,147 +1,95 @@
-import { FeedItem } from "./crawler";
+import { createClient } from "@supabase/supabase-js";
+import type { FeedItem } from "./crawler";
 
-const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-
-function getSupabaseConfig() {
-  const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return { url, key };
-}
-
-function getHeaders(key: string, extra?: Record<string, string>) {
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    ...extra,
-  };
-}
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 
 export function isSupabaseConfigured(): boolean {
-  return getSupabaseConfig() !== null;
+  return Boolean(supabaseUrl && supabaseAnonKey);
 }
 
-export async function isMemoryStale(scope: string): Promise<boolean> {
-  const cfg = getSupabaseConfig();
-  if (!cfg) return true;
+function getSupabaseClient() {
+  if (!isSupabaseConfigured()) return null;
+  return createClient(supabaseUrl, supabaseAnonKey);
+}
+
+export async function isMemoryStale(topic: string, maxAgeMinutes = 60): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return true;
 
   try {
-    const res = await fetch(
-      `${cfg.url}/rest/v1/sync_state?scope=eq.${encodeURIComponent(scope)}&select=last_synced_at`,
-      {
-        headers: getHeaders(cfg.key),
-        cache: "no-store",
-      }
-    );
-    if (!res.ok) return true;
+    let query = supabase
+      .from("articles")
+      .select("created_at")
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-    const rows: { last_synced_at: string }[] = await res.json();
-    if (!rows.length || !rows[0].last_synced_at) return true;
+    if (topic !== "all") {
+      query = query.eq("topic_id", topic);
+    }
 
-    const lastSynced = new Date(rows[0].last_synced_at).getTime();
-    return Date.now() - lastSynced >= TWO_HOURS_MS;
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) return true;
+
+    const lastUpdated = new Date(data[0].created_at).getTime();
+    const ageMinutes = (Date.now() - lastUpdated) / (1000 * 60);
+    return ageMinutes > maxAgeMinutes;
   } catch {
     return true;
   }
 }
 
-export async function saveArticlesToMemory(items: FeedItem[], scope: string): Promise<void> {
-  const cfg = getSupabaseConfig();
-  if (!cfg) return;
+export async function saveArticlesToMemory(items: FeedItem[], _topic: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase || items.length === 0) return;
 
-  const nowIso = new Date().toISOString();
+  const rows = items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    url: item.url,
+    source: item.source,
+    published_at: item.publishedAt,
+    topic_id: item.topicId,
+    topic_label: item.topicLabel,
+    category: item.category,
+  }));
 
-  try {
-    if (items.length > 0) {
-      const payload = items.map((item) => ({
-        url: item.url,
-        id: item.id,
-        title: item.title,
-        summary: item.summary,
-        source: item.source,
-        published_at: item.publishedAt,
-        topic_id: item.topicId,
-        topic_label: item.topicLabel,
-        category: item.category,
-        crawled_at: nowIso,
-      }));
-
-      await fetch(`${cfg.url}/rest/v1/articles?on_conflict=url`, {
-        method: "POST",
-        headers: getHeaders(cfg.key, {
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        }),
-        body: JSON.stringify(payload),
-        cache: "no-store",
-      });
-    }
-
-    await fetch(`${cfg.url}/rest/v1/sync_state?on_conflict=scope`, {
-      method: "POST",
-      headers: getHeaders(cfg.key, {
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      }),
-      body: JSON.stringify([{ scope, last_synced_at: nowIso }]),
-      cache: "no-store",
-    });
-  } catch (err) {
-    console.error("Failed to save findings to Supabase:", err);
-  }
+  await supabase.from("articles").upsert(rows, { onConflict: "url" });
 }
 
 export async function getArticlesFromMemory(
-  topicId: string = "all",
-  category: "all" | "news" | "research" = "all",
-  limit = 250
+  topic: string,
+  category: "all" | "news" | "research"
 ): Promise<FeedItem[]> {
-  const cfg = getSupabaseConfig();
-  if (!cfg) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
 
-  try {
-    const params = new URLSearchParams();
-    params.set("select", "id,title,summary,url,source,published_at,topic_id,topic_label,category");
-    params.set("order", "published_at.desc");
-    params.set("limit", String(limit));
+  let query = supabase
+    .from("articles")
+    .select("*")
+    .order("published_at", { ascending: false })
+    .limit(60);
 
-    if (topicId !== "all") {
-      params.set("topic_id", `eq.${topicId}`);
-    }
-    if (category !== "all") {
-      params.set("category", `eq.${category}`);
-    }
-
-    const res = await fetch(`${cfg.url}/rest/v1/articles?${params.toString()}`, {
-      headers: getHeaders(cfg.key),
-      cache: "no-store",
-    });
-
-    if (!res.ok) return [];
-
-    const rows: {
-      id: string;
-      title: string;
-      summary: string;
-      url: string;
-      source: string;
-      published_at: string;
-      topic_id: string;
-      topic_label: string;
-      category: "news" | "research";
-    }[] = await res.json();
-
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      summary: r.summary,
-      url: r.url,
-      source: r.source,
-      publishedAt: r.published_at,
-      topicId: r.topic_id,
-      topicLabel: r.topic_label,
-      category: r.category,
-    }));
-  } catch {
-    return [];
+  if (topic !== "all") {
+    query = query.eq("topic_id", topic);
   }
+  if (category !== "all") {
+    query = query.eq("category", category);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+
+  return data.map((row) => ({
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    url: row.url,
+    source: row.source,
+    publishedAt: row.published_at,
+    topicId: row.topic_id,
+    topicLabel: row.topic_label,
+    category: row.category,
+  }));
 }
