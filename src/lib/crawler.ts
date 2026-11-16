@@ -60,7 +60,7 @@ async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<F
       const cleanTitle = rawTitle.replace(/\s+-\s+[^-]+$/, "").trim() || rawTitle;
 
       return {
-        id: `news-${topic.id}-${idx}-${Buffer.from(link || cleanTitle).toString("base64").slice(0, 12)}`,
+        id: `news-${topic.id}-${idx}-${btoa(link || cleanTitle).slice(0, 12)}`,
         title: cleanTitle,
         summary: description && description !== cleanTitle ? description : `Latest coverage on ${topic.name} via ${source}.`,
         url: link,
@@ -103,7 +103,7 @@ async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedIt
       const sourceLabel = authorMatches.length > 1 ? `${firstAuthor} et al. (arXiv)` : `${firstAuthor} (arXiv)`;
 
       return {
-        id: `arxiv-${topic.id}-${idx}-${Buffer.from(idUrl || title).toString("base64").slice(0, 12)}`,
+        id: `arxiv-${topic.id}-${idx}-${btoa(idUrl || title).slice(0, 12)}`,
         title,
         summary,
         url: idUrl,
