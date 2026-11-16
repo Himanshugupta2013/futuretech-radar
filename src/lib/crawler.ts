@@ -1,178 +1,157 @@
-import { FUTURE_TOPICS, TechTopic } from "./topics";
+import { FUTURE_TOPICS, FutureTopic } from "./topics";
 
-export type ArticleCategory = "news" | "research";
-
-export interface NewsArticle {
+export interface FeedItem {
   id: string;
   title: string;
+  summary: string;
   url: string;
   source: string;
   publishedAt: string;
-  summary: string;
   topicId: string;
-  topicName: string;
-  badgeColor: string;
-  category: ArticleCategory;
+  topicLabel: string;
+  category: "news" | "research";
 }
 
-function decodeHtmlEntities(input: string): string {
-  return input
+function decodeHtmlEntities(str: string): string {
+  return str
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
+    .replace(/&apos;/g, "'")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function extractTag(block: string, tagName: string): string {
-  const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i");
+function extractTag(block: string, tag: string): string {
+  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
   const match = block.match(regex);
   return match ? decodeHtmlEntities(match[1]) : "";
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<FeedItem[]> {
+  const query = encodeURIComponent(`${topic.newsQuery} when:7d`);
+  const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
+
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
+    const res = await fetch(rssUrl, {
+      cache: "no-store",
       headers: {
-        "User-Agent": "FutureTechRadar/1.0 (+https://vercel.com)",
+        "User-Agent": "Mozilla/5.0 (compatible; FutureTechRadar/1.0)",
       },
-      next: { revalidate: 900 },
     });
-    if (!res.ok) return "";
-    return await res.text();
+    if (!res.ok) return [];
+
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+
+    return items.slice(0, limit).map((itemXml, idx) => {
+      const rawTitle = extractTag(itemXml, "title");
+      const link = extractTag(itemXml, "link");
+      const pubDate = extractTag(itemXml, "pubDate");
+      const source = extractTag(itemXml, "source") || "Tech News";
+      const description = extractTag(itemXml, "description");
+
+      const cleanTitle = rawTitle.replace(/\s+-\s+[^-]+$/, "").trim() || rawTitle;
+
+      return {
+        id: `news-${topic.id}-${idx}-${Buffer.from(link || cleanTitle).toString("base64").slice(0, 12)}`,
+        title: cleanTitle,
+        summary: description && description !== cleanTitle ? description : `Latest coverage on ${topic.label} via ${source}.`,
+        url: link,
+        source,
+        publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+        topicId: topic.id,
+        topicLabel: topic.shortLabel,
+        category: "news",
+      };
+    });
   } catch {
-    return "";
-  } finally {
-    clearTimeout(timer);
+    return [];
   }
 }
 
-async function crawlGoogleNews(topic: TechTopic, limit = 6): Promise<NewsArticle[]> {
-  const encodedQuery = encodeURIComponent(topic.newsQuery);
-  const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-US&gl=US&ceid=US:en`;
-  const xml = await fetchWithTimeout(url);
-  if (!xml) return [];
+async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedItem[]> {
+  const query = encodeURIComponent(topic.arxivQuery);
+  const arxivUrl = `https://export.arxiv.org/api/query?search_query=${query}&start=0&max_results=${limit}&sortBy=submittedDate&sortOrder=descending`;
 
-  const items = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
-  const results: NewsArticle[] = [];
-
-  for (const item of items.slice(0, limit)) {
-    const rawTitle = extractTag(item, "title");
-    const link = extractTag(item, "link");
-    const pubDate = extractTag(item, "pubDate");
-    const sourceTag = extractTag(item, "source");
-    const description = extractTag(item, "description");
-
-    // Google News titles often end with " - Publisher Name"
-    let title = rawTitle;
-    let source = sourceTag || "Tech News";
-    const dashIndex = rawTitle.lastIndexOf(" - ");
-    if (dashIndex > 10) {
-      title = rawTitle.slice(0, dashIndex).trim();
-      if (!sourceTag) source = rawTitle.slice(dashIndex + 3).trim();
-    }
-
-    if (!title || !link) continue;
-
-    results.push({
-      id: `news-${topic.id}-${Buffer.from(link).toString("base64").slice(0, 16)}`,
-      title,
-      url: link,
-      source,
-      publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-      summary: description && description !== title ? description.slice(0, 220) : `Latest business & technology coverage on ${topic.name}.`,
-      topicId: topic.id,
-      topicName: topic.shortName,
-      badgeColor: topic.badgeColor,
-      category: "news",
+  try {
+    const res = await fetch(arxivUrl, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "FutureTechRadar/1.0 (mailto:research@futuretechradar.local)",
+      },
     });
-  }
+    if (!res.ok) return [];
 
-  return results;
-}
+    const xml = await res.text();
+    const entries = xml.match(/<entry>([\s\S]*?)<\/entry>/g) || [];
 
-async function crawlArxiv(topic: TechTopic, limit = 4): Promise<NewsArticle[]> {
-  const encodedQuery = encodeURIComponent(topic.arxivQuery);
-  const url = `https://export.arxiv.org/api/query?search_query=${encodedQuery}&sortBy=submittedDate&sortOrder=descending&max_results=${limit}`;
-  const xml = await fetchWithTimeout(url);
-  if (!xml) return [];
+    return entries.map((entryXml, idx) => {
+      const title = extractTag(entryXml, "title");
+      const summary = extractTag(entryXml, "summary");
+      const idUrl = extractTag(entryXml, "id");
+      const published = extractTag(entryXml, "published");
 
-  const entries = xml.match(/<entry>[\s\S]*?<\/entry>/gi) ?? [];
-  const results: NewsArticle[] = [];
+      const authorMatches = entryXml.match(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g) || [];
+      const firstAuthor = authorMatches[0] ? extractTag(authorMatches[0], "name") : "arXiv Preprint";
+      const sourceLabel = authorMatches.length > 1 ? `${firstAuthor} et al. (arXiv)` : `${firstAuthor} (arXiv)`;
 
-  for (const entry of entries) {
-    const title = extractTag(entry, "title");
-    const idUrl = extractTag(entry, "id");
-    const published = extractTag(entry, "published");
-    const summary = extractTag(entry, "summary");
-
-    if (!title || !idUrl) continue;
-
-    results.push({
-      id: `arxiv-${topic.id}-${idUrl.split("/").pop() ?? Math.random().toString(36).slice(2)}`,
-      title,
-      url: idUrl,
-      source: "arXiv Research",
-      publishedAt: published ? new Date(published).toISOString() : new Date().toISOString(),
-      summary: summary ? `${summary.slice(0, 220)}...` : `Peer-reviewed / preprint research in ${topic.name}.`,
-      topicId: topic.id,
-      topicName: topic.shortName,
-      badgeColor: topic.badgeColor,
-      category: "research",
+      return {
+        id: `arxiv-${topic.id}-${idx}-${Buffer.from(idUrl || title).toString("base64").slice(0, 12)}`,
+        title,
+        summary,
+        url: idUrl,
+        source: sourceLabel,
+        publishedAt: published ? new Date(published).toISOString() : new Date().toISOString(),
+        topicId: topic.id,
+        topicLabel: topic.shortLabel,
+        category: "research",
+      };
     });
+  } catch {
+    return [];
   }
-
-  return results;
 }
 
-export async function crawlFutureTechArticles(options: {
-  topicId?: string;
-  category?: "all" | ArticleCategory;
-}): Promise<{ articles: NewsArticle[]; crawledAt: string }> {
+export async function crawlFutureTech(
+  topicId: string = "all",
+  category: "all" | "news" | "research" = "all"
+): Promise<FeedItem[]> {
   const selectedTopics =
-    options.topicId && options.topicId !== "all"
-      ? FUTURE_TOPICS.filter((t) => t.id === options.topicId)
-      : FUTURE_TOPICS;
+    topicId === "all"
+      ? FUTURE_TOPICS
+      : FUTURE_TOPICS.filter((t) => t.id === topicId);
 
-  const isSingleTopic = selectedTopics.length === 1;
+  const topicsToCrawl = selectedTopics.length > 0 ? selectedTopics : FUTURE_TOPICS;
+  const isSingleTopic = topicId !== "all";
   const newsLimit = isSingleTopic ? 12 : 2;
   const arxivLimit = isSingleTopic ? 8 : 1;
 
-  const tasks: Promise<NewsArticle[]>[] = [];
+  const tasks: Promise<FeedItem[]>[] = [];
 
-  for (const topic of selectedTopics) {
-    if (!options.category || options.category === "all" || options.category === "news") {
-      tasks.push(crawlGoogleNews(topic, newsLimit));
+  for (const topic of topicsToCrawl) {
+    if (category === "all" || category === "news") {
+      tasks.push(fetchGoogleNewsForTopic(topic, newsLimit));
     }
-    if (!options.category || options.category === "all" || options.category === "research") {
-      tasks.push(crawlArxiv(topic, arxivLimit));
+    if (category === "all" || category === "research") {
+      tasks.push(fetchArxivForTopic(topic, arxivLimit));
     }
   }
 
-  const batches = await Promise.all(tasks);
-  const flat = batches.flat();
+  const results = await Promise.all(tasks);
+  const merged = results.flat();
 
-  // Deduplicate by normalized title and sort newest first
-  const seen = new Set<string>();
-  const unique = flat.filter((article) => {
-    const key = article.title.toLowerCase().slice(0, 60);
-    if (seen.has(key)) return false;
-    seen.add(key);
+  const seenUrls = new Set<string>();
+  const deduped = merged.filter((item) => {
+    if (!item.url || seenUrls.has(item.url)) return false;
+    seenUrls.add(item.url);
     return true;
   });
 
-  unique.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-
-  return {
-    articles: unique,
-    crawledAt: new Date().toISOString(),
-  };
+  deduped.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  return deduped;
 }
