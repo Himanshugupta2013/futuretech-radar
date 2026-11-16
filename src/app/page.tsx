@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Atom,
   BookOpen,
@@ -10,8 +10,128 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import { FUTURE_TOPICS } from "@/lib/topics";
-import type { ArticleCategory, NewsArticle } from "@/lib/crawler";
+
+// Embedded types & topic definitions so this file is 100% self-contained
+export type ArticleCategory = "news" | "research";
+
+export interface NewsArticle {
+  id: string;
+  topicId: string;
+  topicName: string;
+  badgeColor: string;
+  category: ArticleCategory;
+  title: string;
+  summary: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+}
+
+export interface FutureTopic {
+  id: string;
+  shortName: string;
+  name: string;
+  description: string;
+}
+
+const FUTURE_TOPICS: FutureTopic[] = [
+  {
+    id: "agentic-ai",
+    shortName: "Agentic AI",
+    name: "Generative & Agentic AI",
+    description: "Autonomous AI agents, reasoning models, and enterprise GenAI deployments.",
+  },
+  {
+    id: "quantum",
+    shortName: "Quantum",
+    name: "Quantum Computing",
+    description: "Qubit scaling, fault-tolerant architectures, and quantum advantage.",
+  },
+  {
+    id: "neuromorphic",
+    shortName: "Neuromorphic",
+    name: "Neuromorphic Computing",
+    description: "Brain-inspired spiking neural networks and ultra-low-power silicon.",
+  },
+  {
+    id: "hyperautomation",
+    shortName: "Hyperautomation",
+    name: "Hyperautomation",
+    description: "End-to-end intelligent process automation, RPA, and autonomous workflows.",
+  },
+  {
+    id: "autonomous-ev",
+    shortName: "Autonomous EV",
+    name: "Autonomous Vehicles",
+    description: "Self-driving fleets, LiDAR/vision stacks, and autonomous logistics.",
+  },
+  {
+    id: "batteries",
+    shortName: "Batteries",
+    name: "Battery Technologies",
+    description: "Solid-state cells, sodium-ion storage, and high-density grid batteries.",
+  },
+  {
+    id: "synbio",
+    shortName: "SynBio",
+    name: "Synthetic Biology",
+    description: "Programmable organisms, biodesign, and sustainable biomanufacturing.",
+  },
+  {
+    id: "bcis",
+    shortName: "BCIs",
+    name: "Brain-Computer Interfaces (BCIs)",
+    description: "Neural implants, non-invasive neurotech, and cognitive decoding.",
+  },
+  {
+    id: "digital-trust",
+    shortName: "Digital Trust",
+    name: "Digital Trust Technologies",
+    description: "Post-quantum cryptography, zero-knowledge proofs, and AI provenance.",
+  },
+  {
+    id: "zero-latency",
+    shortName: "6G & Edge",
+    name: "Zero-Latency Connectivity",
+    description: "6G networks, satellite-to-cell constellations, and deterministic edge.",
+  },
+  {
+    id: "voice-ai",
+    shortName: "Voice AI",
+    name: "Voice-Activated Technology",
+    description: "Real-time conversational speech models and ambient voice interfaces.",
+  },
+  {
+    id: "fusion",
+    shortName: "Fusion",
+    name: "Nuclear Fusion",
+    description: "Magnetic & inertial confinement breakthroughs toward net energy gain.",
+  },
+  {
+    id: "preventive-med",
+    shortName: "Preventive Med",
+    name: "Preventive Medicine & Wellbeing",
+    description: "Longevity therapeutics, multi-omics diagnostics, and continuous biomarkers.",
+  },
+  {
+    id: "climate-tech",
+    shortName: "Climate Tech",
+    name: "Climate Tech",
+    description: "Direct air carbon capture, green hydrogen, and industrial decarbonization.",
+  },
+  {
+    id: "space-tech",
+    shortName: "Space Tech",
+    name: "Space Exploration",
+    description: "Reusable heavy-lift rockets, orbital manufacturing, and lunar infrastructure.",
+  },
+  {
+    id: "nanotech",
+    shortName: "Nanotech",
+    name: "Nanotechnology",
+    description: "Metamaterials, graphene electronics, and targeted nanomedicine delivery.",
+  },
+];
 
 export default function HomePage() {
   const [selectedTopic, setSelectedTopic] = useState<string>("all");
@@ -21,40 +141,58 @@ export default function HomePage() {
   const [crawledAt, setCrawledAt] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
+  // Fetch live articles from the /api/news route with cache-busting & request cancellation
   async function fetchFeed(topic: string, type: "all" | ArticleCategory) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/news?topic=${encodeURIComponent(topic)}&type=${encodeURIComponent(type)}`
+        `/api/news?topic=${encodeURIComponent(topic)}&type=${encodeURIComponent(type)}&_t=${Date.now()}`,
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        }
       );
       if (!res.ok) throw new Error("Failed to load feed");
       const data = await res.json();
       setArticles(data.articles ?? []);
       setCrawledAt(data.crawledAt ?? null);
-    } catch {
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
       setError("Could not crawl live sources right now. Please try refreshing.");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     fetchFeed(selectedTopic, selectedType);
+    return () => abortRef.current?.abort();
   }, [selectedTopic, selectedType]);
 
+  // Client-side filtering ensures topic, category, and search always match immediately
   const filteredArticles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return articles;
-    return articles.filter(
-      (a) =>
+    return articles.filter((a) => {
+      if (selectedTopic !== "all" && a.topicId !== selectedTopic) return false;
+      if (selectedType !== "all" && a.category !== selectedType) return false;
+      if (!q) return true;
+      return (
         a.title.toLowerCase().includes(q) ||
         a.summary.toLowerCase().includes(q) ||
         a.source.toLowerCase().includes(q) ||
         a.topicName.toLowerCase().includes(q)
-    );
-  }, [articles, searchQuery]);
+      );
+    });
+  }, [articles, selectedTopic, selectedType, searchQuery]);
 
   const activeTopicObj = FUTURE_TOPICS.find((t) => t.id === selectedTopic);
 
