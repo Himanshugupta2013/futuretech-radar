@@ -18,8 +18,6 @@ interface FutureTopic {
   label: string;
   shortLabel: string;
   description: string;
-  newsQuery: string;
-  arxivQuery: string;
 }
 
 interface FeedItem {
@@ -40,128 +38,96 @@ const FUTURE_TOPICS: FutureTopic[] = [
     label: "Generative & Agentic AI",
     shortLabel: "Agentic AI",
     description: "Autonomous AI agents, reasoning models, and enterprise GenAI deployments.",
-    newsQuery: '"agentic AI" OR "generative AI" enterprise',
-    arxivQuery: 'all:"agentic AI" OR all:"large language model" reasoning',
   },
   {
     id: "quantum-computing",
     label: "Quantum Computing",
     shortLabel: "Quantum",
     description: "Qubit scaling, fault-tolerant architectures, and quantum advantage.",
-    newsQuery: '"quantum computing" breakthrough OR business',
-    arxivQuery: 'cat:quant-ph AND (all:"quantum computing" OR all:"fault-tolerant")',
   },
   {
     id: "neuromorphic-computing",
     label: "Neuromorphic Computing",
     shortLabel: "Neuromorphic",
     description: "Brain-inspired spiking neural networks and ultra-low-power silicon.",
-    newsQuery: '"neuromorphic computing" OR "neuromorphic chip"',
-    arxivQuery: 'all:"neuromorphic computing" OR all:"spiking neural network"',
   },
   {
     id: "hyperautomation",
     label: "Hyperautomation",
     shortLabel: "Hyperautomation",
     description: "End-to-end AI process orchestration, RPA, and autonomous workflows.",
-    newsQuery: 'hyperautomation OR "intelligent automation" enterprise',
-    arxivQuery: 'all:"process automation" AND all:"artificial intelligence"',
   },
   {
     id: "autonomous-vehicles",
     label: "Autonomous Vehicles",
     shortLabel: "Autonomous EV",
     description: "Self-driving fleets, robotaxis, and spatial perception systems.",
-    newsQuery: '"autonomous vehicles" OR robotaxi deployment',
-    arxivQuery: 'all:"autonomous driving" OR all:"self-driving"',
   },
   {
     id: "battery-technologies",
     label: "Battery Technologies",
     shortLabel: "Batteries",
     description: "Solid-state cells, sodium-ion storage, and grid-scale energy density.",
-    newsQuery: '"solid-state battery" OR "battery technology" breakthrough',
-    arxivQuery: 'all:"solid-state battery" OR all:"lithium-ion" energy storage',
   },
   {
     id: "synthetic-biology",
     label: "Synthetic Biology",
     shortLabel: "SynBio",
     description: "Programmable organisms, biodesign, and sustainable biomanufacturing.",
-    newsQuery: '"synthetic biology" OR biomanufacturing',
-    arxivQuery: 'all:"synthetic biology" OR all:"metabolic engineering"',
   },
   {
     id: "brain-computer-interfaces",
     label: "Brain-Computer Interfaces (BCIs)",
     shortLabel: "BCIs",
     description: "Neural implants, non-invasive neurotech, and cognitive decoding.",
-    newsQuery: '"brain-computer interface" OR neurotechnology',
-    arxivQuery: 'all:"brain-computer interface" OR all:"neural decoding"',
   },
   {
     id: "digital-trust",
     label: "Digital Trust Technologies",
     shortLabel: "Digital Trust",
     description: "Post-quantum cryptography, zero-knowledge proofs, and AI provenance.",
-    newsQuery: '"post-quantum cryptography" OR "digital trust" OR "zero trust"',
-    arxivQuery: 'all:"post-quantum cryptography" OR all:"zero-knowledge"',
   },
   {
     id: "zero-latency-connectivity",
     label: "Zero-Latency Connectivity",
     shortLabel: "6G & Edge",
     description: "6G wireless research, satellite-to-cell, and deterministic edge networks.",
-    newsQuery: '"6G" wireless OR "low-latency" satellite connectivity',
-    arxivQuery: 'all:"6G" AND (all:"wireless" OR all:"ultra-low latency")',
   },
   {
     id: "voice-activated-tech",
     label: "Voice-Activated Technology",
     shortLabel: "Voice AI",
     description: "Real-time conversational voice agents and multimodal audio interfaces.",
-    newsQuery: '"voice AI" OR "conversational AI" voice agent',
-    arxivQuery: 'all:"speech synthesis" OR all:"spoken dialogue" LLM',
   },
   {
     id: "nuclear-fusion",
     label: "Nuclear Fusion",
     shortLabel: "Fusion",
     description: "Magnetic confinement, inertial fusion milestones, and commercial reactors.",
-    newsQuery: '"nuclear fusion" energy breakthrough OR reactor',
-    arxivQuery: 'all:"nuclear fusion" OR all:"tokamak" plasma',
   },
   {
     id: "preventive-medicine",
     label: "Preventive Medicine & Wellbeing",
     shortLabel: "Preventive Med",
     description: "AI diagnostics, longevity biomarkers, and personalized genomics.",
-    newsQuery: '"preventive medicine" AI OR longevity biotech',
-    arxivQuery: 'all:"precision medicine" OR all:"biomarker" machine learning',
   },
   {
     id: "climate-tech",
     label: "Climate Tech",
     shortLabel: "Climate Tech",
     description: "Direct air capture, green hydrogen, and industrial decarbonization.",
-    newsQuery: '"climate tech" OR "carbon capture" OR "green hydrogen"',
-    arxivQuery: 'all:"carbon capture" OR all:"decarbonization" energy',
   },
   {
     id: "space-exploration",
     label: "Space Exploration",
     shortLabel: "Space Tech",
     description: "Reusable launch vehicles, orbital infrastructure, and lunar economy.",
-    newsQuery: '"space exploration" OR "commercial space" launch',
-    arxivQuery: 'cat:astro-ph.IM OR all:"spacecraft" propulsion',
   },
   {
     id: "nanotechnology",
     label: "Nanotechnology",
     shortLabel: "Nanotech",
     description: "Metamaterials, carbon nanotubes, and nanoscale drug delivery.",
-    newsQuery: 'nanotechnology breakthrough OR nanomaterials',
-    arxivQuery: 'all:"nanotechnology" OR all:"nanomaterials" application',
   },
 ];
 
@@ -185,41 +151,45 @@ export default function HomePage() {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const fetchArticles = useCallback(async (topicId: string, category: "all" | "news" | "research") => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("topic", topicId);
-      params.set("type", category);
-      params.set("_t", String(Date.now()));
-
-      const res = await fetch(`/api/news?${params.toString()}`, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
-      const data = await res.json();
-      setArticles(data.articles || []);
-      setUpdatedAt(data.updatedAt || null);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      setError("Unable to crawl live sources right now. Please try refreshing.");
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
+  const fetchArticles = useCallback(
+    async (topicId: string, category: "all" | "news" | "research", force = false) => {
+      if (abortRef.current) {
+        abortRef.current.abort();
       }
-    }
-  }, []);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("topic", topicId);
+        params.set("type", category);
+        if (force) params.set("force", "true");
+        params.set("_t", String(Date.now()));
+
+        const res = await fetch(`/api/news?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+        const data = await res.json();
+        setArticles(data.articles || []);
+        setUpdatedAt(data.updatedAt || null);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setError("Unable to load intelligence feed right now. Please try refreshing.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    fetchArticles(selectedTopic, selectedCategory);
+    fetchArticles(selectedTopic, selectedCategory, false);
   }, [selectedTopic, selectedCategory, fetchArticles]);
 
   const activeTopicObj = useMemo(
@@ -281,7 +251,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => fetchArticles(selectedTopic, selectedCategory)}
+              onClick={() => fetchArticles(selectedTopic, selectedCategory, true)}
               disabled={loading}
               className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition"
             >
@@ -335,11 +305,11 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span>{filteredArticles.length} articles</span>
+            <span>{filteredArticles.length} saved findings</span>
             {updatedAt && (
               <span className="inline-flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
-                Updated {new Date(updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                Synced {new Date(updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
           </div>
