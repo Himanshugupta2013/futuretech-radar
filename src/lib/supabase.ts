@@ -49,7 +49,7 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
   }));
 
   try {
-    await fetch(`${supabaseUrl}/rest/v1/articles`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/articles`, {
       method: "POST",
       headers: {
         apikey: supabaseAnonKey,
@@ -59,6 +59,11 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
       },
       body: JSON.stringify(rows),
     });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Supabase upsert error:", errText);
+    }
   } catch (error) {
     console.error("Failed to save articles to Supabase:", error);
   }
