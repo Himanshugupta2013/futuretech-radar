@@ -67,7 +67,7 @@ async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<F
         source,
         publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         topicId: topic.id,
-        topicLabel: topic.shortLabel,
+        topicLabel: topic.label,
         category: "news",
       };
     });
@@ -110,7 +110,7 @@ async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedIt
         source: sourceLabel,
         publishedAt: published ? new Date(published).toISOString() : new Date().toISOString(),
         topicId: topic.id,
-        topicLabel: topic.shortLabel,
+        topicLabel: topic.label,
         category: "research",
       };
     });
