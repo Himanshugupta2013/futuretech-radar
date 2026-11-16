@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { crawlFutureTech } from "@/lib/crawler";
 import {
   isSupabaseConfigured,
-  isMemoryStale,
   saveArticlesToMemory,
   getArticlesFromMemory,
 } from "@/lib/supabase";
@@ -20,20 +19,24 @@ export async function GET(request: NextRequest) {
 
   try {
     if (isSupabaseConfigured()) {
-      const stale = await isMemoryStale(topic);
-
-      if (forceRefresh || stale) {
+      // If user clicked Refresh or if memory is empty, crawl fresh data first
+      const existingArticles = await getArticlesFromMemory(topic, category);
+      
+      if (forceRefresh || existingArticles.length === 0) {
         const freshItems = await crawlFutureTech(topic, "all");
-        await saveArticlesToMemory(freshItems, topic);
+        if (freshItems.length > 0) {
+          await saveArticlesToMemory(freshItems, topic);
+        }
       }
 
+      // Fetch the updated list from memory/database
       const rememberedArticles = await getArticlesFromMemory(topic, category);
 
       return NextResponse.json(
         {
           articles: rememberedArticles,
           updatedAt: new Date().toISOString(),
-          source: forceRefresh || stale ? "crawled-and-saved" : "supabase-memory",
+          source: forceRefresh ? "refreshed-and-saved" : "supabase-memory",
         },
         {
           headers: {
@@ -43,7 +46,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fallback if Supabase env vars are not set yet
+    // Fallback if Supabase env vars are not set
     const articles = await crawlFutureTech(topic, category);
     return NextResponse.json(
       {
