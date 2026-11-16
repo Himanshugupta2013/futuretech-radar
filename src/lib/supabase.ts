@@ -72,12 +72,8 @@ export async function getArticlesFromMemory(
 
   try {
     let queryUrl = `${supabaseUrl}/rest/v1/articles?select=*&order=published_at.desc&limit=60`;
-    if (topic !== "all") {
-      queryUrl += `&topic_id=eq.${topic}`;
-    }
-    if (category !== "all") {
-      queryUrl += `&category=eq.${category}`;
-    }
+    if (topic !== "all") queryUrl += `&topic_id=eq.${topic}`;
+    if (category !== "all") queryUrl += `&category=eq.${category}`;
 
     const res = await fetch(queryUrl, {
       headers: {
