@@ -35,7 +35,8 @@ function extractTag(block: string, tag: string): string {
 }
 
 async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<FeedItem[]> {
-  const query = encodeURIComponent(`${topic.newsQuery} when:7d`);
+  // Removed restrictive 'when:7d' modifier to ensure Google News RSS returns articles reliably
+  const query = encodeURIComponent(topic.newsQuery);
   const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
 
   try {
@@ -56,7 +57,6 @@ async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<F
       const pubDate = extractTag(itemXml, "pubDate");
       const source = extractTag(itemXml, "source") || "Tech News";
       const description = extractTag(itemXml, "description");
-
       const cleanTitle = rawTitle.replace(/\s+-\s+[^-]+$/, "").trim() || rawTitle;
 
       return {
@@ -97,7 +97,6 @@ async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedIt
       const summary = extractTag(entryXml, "summary");
       const idUrl = extractTag(entryXml, "id");
       const published = extractTag(entryXml, "published");
-
       const authorMatches = entryXml.match(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g) || [];
       const firstAuthor = authorMatches[0] ? extractTag(authorMatches[0], "name") : "arXiv Preprint";
       const sourceLabel = authorMatches.length > 1 ? `${firstAuthor} et al. (arXiv)` : `${firstAuthor} (arXiv)`;
@@ -123,12 +122,9 @@ export async function crawlFutureTech(
   topicId: string = "all",
   category: "all" | "news" | "research" = "all"
 ): Promise<FeedItem[]> {
-  const selectedTopics =
-    topicId === "all"
-      ? FUTURE_TOPICS
-      : FUTURE_TOPICS.filter((t) => t.id === topicId);
-
+  const selectedTopics = topicId === "all" ? FUTURE_TOPICS : FUTURE_TOPICS.filter((t) => t.id === topicId);
   const topicsToCrawl = selectedTopics.length > 0 ? selectedTopics : FUTURE_TOPICS;
+
   const isSingleTopic = topicId !== "all";
   const newsLimit = isSingleTopic ? 12 : 2;
   const arxivLimit = isSingleTopic ? 8 : 1;
@@ -155,5 +151,6 @@ export async function crawlFutureTech(
   });
 
   deduped.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
   return deduped;
 }
