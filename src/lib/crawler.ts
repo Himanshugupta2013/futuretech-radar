@@ -62,12 +62,12 @@ async function fetchGoogleNewsForTopic(topic: FutureTopic, limit = 6): Promise<F
       return {
         id: `news-${topic.id}-${idx}-${Buffer.from(link || cleanTitle).toString("base64").slice(0, 12)}`,
         title: cleanTitle,
-        summary: description && description !== cleanTitle ? description : `Latest coverage on ${topic.label} via ${source}.`,
+        summary: description && description !== cleanTitle ? description : `Latest coverage on ${topic.name} via ${source}.`,
         url: link,
         source,
         publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
         topicId: topic.id,
-        topicLabel: topic.label,
+        topicLabel: topic.name,
         category: "news",
       };
     });
@@ -110,7 +110,7 @@ async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedIt
         source: sourceLabel,
         publishedAt: published ? new Date(published).toISOString() : new Date().toISOString(),
         topicId: topic.id,
-        topicLabel: topic.label,
+        topicLabel: topic.name,
         category: "research",
       };
     });
