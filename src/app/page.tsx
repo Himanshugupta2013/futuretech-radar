@@ -63,6 +63,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [previewTestStatus, setPreviewTestStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [previewTestMessage, setPreviewTestMessage] = useState("");
+
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [analyses, setAnalyses] = useState<Record<string, { status: "loading" | "error" | "ready"; error?: string; data?: { whatHappened: string; whyItMatters: string; opportunities: string[]; risks: string[]; confidenceNote: string } }>>({});
@@ -137,6 +140,28 @@ export default function HomePage() {
         ...current,
         [article.id]: { status: "error", error: err instanceof Error ? err.message : "Analysis failed." },
       }));
+    }
+  };
+
+  const runPreviewIntelligenceTest = async () => {
+    if (previewTestStatus === "running" || previewTestStatus === "done") return;
+    setPreviewTestStatus("running");
+    setPreviewTestMessage("");
+    try {
+      const response = await fetch("/api/preview-intelligence-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || result.message || "The test could not be completed.");
+      const completed = (result.results || []).filter((item: { status: string }) => item.status === "completed").length;
+      const skipped = (result.results || []).filter((item: { status: string }) => item.status === "skipped").length;
+      const failed = (result.results || []).filter((item: { status: string }) => item.status === "failed").length;
+      setPreviewTestMessage(`Finished: ${completed} relevant, ${skipped} skipped, ${failed} failed. Check the results below in Supabase.`);
+      setPreviewTestStatus("done");
+    } catch (err) {
+      setPreviewTestMessage(err instanceof Error ? err.message : "The test failed.");
+      setPreviewTestStatus("error");
     }
   };
 
@@ -257,7 +282,15 @@ export default function HomePage() {
               </div>
 
               <aside className="space-y-4">
-                <div className="rounded-xl border border-white/[0.07] bg-[#0d1525] p-4"><div className="flex items-center gap-2"><Sparkles size={15} className="text-violet-300"/><h3 className="text-xs font-semibold text-slate-100">Intelligence layer</h3></div><p className="mt-3 text-xs leading-relaxed text-slate-400">The current feed brings together published signals. AI synthesis, business implications and evidence-backed priority scoring are planned enhancements—not yet active.</p><div className="mt-4 space-y-2"><div className="flex items-center justify-between text-[10px]"><span className="text-slate-500">Source discovery</span><span className="text-emerald-300">Available</span></div><div className="h-1 rounded-full bg-white/10"><div className="h-1 w-full rounded-full bg-emerald-400/70"/></div><div className="flex items-center justify-between text-[10px]"><span className="text-slate-500">AI business analysis</span><span className="text-slate-500">Planned</span></div><div className="h-1 rounded-full bg-white/10"/></div></div>
+                <div className="rounded-xl border border-white/[0.07] bg-[#0d1525] p-4"><div className="flex items-center gap-2"><Sparkles size={15} className="text-violet-300"/><h3 className="text-xs font-semibold text-slate-100">Intelligence layer</h3></div><p className="mt-3 text-xs leading-relaxed text-slate-400">The current feed brings together published signals. AI synthesis, business implications and evidence-backed priority scoring are planned enhancements—not yet active.</p><div className="mt-4 rounded-lg border border-violet-300/15 bg-violet-300/[0.04] p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">Preview test · one-time</p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Run Gemini classification for up to two research articles and save the results to the Preview database. This action can only run once.</p>
+                  <button onClick={runPreviewIntelligenceTest} disabled={previewTestStatus === "running" || previewTestStatus === "done"} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300/20 bg-violet-300/[0.10] px-3 py-2.5 text-[11px] font-semibold text-violet-100 transition hover:bg-violet-300/[0.16] disabled:cursor-not-allowed disabled:opacity-60">
+                    <Sparkles size={13}/>{previewTestStatus === "running" ? "Running test…" : previewTestStatus === "done" ? "Test submitted" : "Run Preview Intelligence Test"}
+                  </button>
+                  {previewTestMessage && <p role="status" className={`mt-2 text-[10px] leading-relaxed ${previewTestStatus === "error" ? "text-rose-300" : "text-emerald-300"}`}>{previewTestMessage}</p>}
+                </div>}
+                <div className="mt-4 space-y-2"><div className="flex items-center justify-between text-[10px]"><span className="text-slate-500">Source discovery</span><span className="text-emerald-300">Available</span></div><div className="h-1 rounded-full bg-white/10"><div className="h-1 w-full rounded-full bg-emerald-400/70"/></div><div className="flex items-center justify-between text-[10px]"><span className="text-slate-500">AI business analysis</span><span className="text-slate-500">Planned</span></div><div className="h-1 rounded-full bg-white/10"/></div></div>
                 <div className="rounded-xl border border-white/[0.07] bg-[#0d1525] p-4"><div className="flex items-center gap-2"><Leaf size={15} className="text-emerald-300"/><h3 className="text-xs font-semibold text-slate-100">Explore the radar</h3></div><p className="mt-2 text-[11px] leading-relaxed text-slate-500">Choose a technology area to focus the signal feed.</p><div className="mt-3 flex flex-wrap gap-1.5">{FUTURE_TOPICS.slice(0,8).map(topic=><button key={topic.id} aria-pressed={selectedTopic === topic.id} onClick={()=>setSelectedTopic(topic.id)} className={`rounded-md border px-2 py-1.5 text-[10px] transition ${selectedTopic === topic.id ? "border-indigo-300/30 bg-indigo-300/10 text-indigo-200" : "border-white/[0.07] text-slate-400 hover:border-white/20 hover:text-white"}`}>{topic.shortLabel}</button>)}</div><button onClick={()=>setSelectedTopic("all")} className="mt-3 inline-flex items-center gap-1 text-[10px] font-medium text-indigo-300 hover:text-white">View all technology areas <ChevronRight size={12}/></button></div>
               </aside>
             </section>
