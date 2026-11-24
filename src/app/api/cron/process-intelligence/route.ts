@@ -85,6 +85,19 @@ export async function POST(request: NextRequest) {
         throw new Error(`Could not queue a Preview article (${queueResponse.status}).`);
       }
 
+      // Read the current attempt count, then atomically claim the pending row.
+      const attemptResponse = await fetch(
+        `${supabaseUrl}/rest/v1/preview_article_intelligence?select=attempt_count&article_url=eq.${encodeURIComponent(article.url)}&processing_status=eq.pending&limit=1`,
+        { headers: dbHeaders(), cache: "no-store" }
+      );
+      if (!attemptResponse.ok) {
+        throw new Error(`Could not read Preview retry count (${attemptResponse.status}).`);
+      }
+      const attemptRows = await attemptResponse.json();
+      const nextAttempt = Array.isArray(attemptRows) && attemptRows[0]
+        ? Number(attemptRows[0].attempt_count || 0) + 1
+        : 1;
+
       // Atomic claim: only one invocation can move a pending row to processing.
       const claimResponse = await fetch(
         `${supabaseUrl}/rest/v1/preview_article_intelligence?article_url=eq.${encodeURIComponent(article.url)}&processing_status=eq.pending`,
@@ -96,7 +109,7 @@ export async function POST(request: NextRequest) {
           }),
           body: JSON.stringify({
             processing_status: "processing",
-            attempt_count: 1,
+            attempt_count: nextAttempt,
             processing_error: null,
             updated_at: new Date().toISOString(),
           }),
