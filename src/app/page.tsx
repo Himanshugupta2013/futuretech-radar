@@ -115,7 +115,7 @@ export default function HomePage() {
   const researchCount = articles.filter(item => item.category === "research").length;
 
   return (
-    <div className="min-h-screen bg-[#080d18] text-slate-100">
+    <div className={`app-shell min-h-screen text-slate-100 ${theme === "light" ? "theme-light" : "theme-dark"}`}>
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         <aside className={`fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r border-white/[0.07] bg-[#0b1120] px-5 py-6 transition-transform lg:static lg:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
           <div className="flex items-center justify-between">
