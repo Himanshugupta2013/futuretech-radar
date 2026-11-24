@@ -33,20 +33,49 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Once any queue row exists, this public button can never spend more Gemini calls.
+    // Permit one controlled retry only when every prior row failed and has fewer than two attempts.
     const check = await fetch(
-      `${supabaseUrl}/rest/v1/preview_article_intelligence?select=article_url&limit=1`,
+      `${supabaseUrl}/rest/v1/preview_article_intelligence?select=article_url,processing_status,attempt_count&order=created_at.asc&limit=3`,
       { headers: { apikey: supabaseKey }, cache: "no-store" }
     );
     if (!check.ok) {
-      return NextResponse.json({ error: "Could not verify the one-time test guard." }, { status: 503 });
+      return NextResponse.json({ error: "Could not verify the Preview retry guard." }, { status: 503 });
     }
     const existing = await check.json();
     if (Array.isArray(existing) && existing.length > 0) {
-      return NextResponse.json({
-        success: false,
-        message: "The one-time Preview test has already been started. No additional Gemini requests were made."
-      }, { status: 409 });
+      const retryable = existing.length <= 2 && existing.every(
+        (row: { processing_status: string; attempt_count: number }) =>
+          row.processing_status === "failed" && Number(row.attempt_count || 0) < 2
+      );
+      if (!retryable) {
+        return NextResponse.json({
+          success: false,
+          message: "The Preview test has already run. Only failed articles with fewer than two processing attempts can be retried."
+        }, { status: 409 });
+      }
+
+      for (const row of existing as Array<{ article_url: string }>) {
+        const reset = await fetch(
+          `${supabaseUrl}/rest/v1/preview_article_intelligence?article_url=eq.${encodeURIComponent(row.article_url)}&processing_status=eq.failed&attempt_count=lt.2`,
+          {
+            method: "PATCH",
+            headers: {
+              apikey: supabaseKey,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify({
+              processing_status: "pending",
+              processing_error: null,
+              updated_at: new Date().toISOString(),
+            }),
+            cache: "no-store",
+          }
+        );
+        if (!reset.ok) {
+          return NextResponse.json({ error: "Could not safely requeue failed Preview articles." }, { status: 503 });
+        }
+      }
     }
 
     // Reuse the existing authenticated processor in-process; the cron secret stays server-side.
