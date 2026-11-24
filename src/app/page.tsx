@@ -65,6 +65,8 @@ export default function HomePage() {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [analyses, setAnalyses] = useState<Record<string, { status: "loading" | "error" | "ready"; error?: string; data?: { whatHappened: string; whyItMatters: string; opportunities: string[]; risks: string[]; confidenceNote: string } }>>({});
+
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("futuretech-radar-theme");
@@ -110,6 +112,33 @@ export default function HomePage() {
     const q = searchQuery.trim().toLowerCase();
     return !q || [item.title, item.summary, item.source, item.topicLabel].some(value => (value || "").toLowerCase().includes(q));
   }), [articles, selectedTopic, selectedCategory, searchQuery]);
+
+
+  const analyseArticle = async (article: FeedItem) => {
+    if (analyses[article.id]?.status === "loading" || analyses[article.id]?.status === "ready") return;
+    setAnalyses(current => ({ ...current, [article.id]: { status: "loading" } }));
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: article.title,
+          summary: article.summary || article.title,
+          source: article.source,
+          url: article.url,
+          topicLabel: article.topicLabel,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Analysis failed.");
+      setAnalyses(current => ({ ...current, [article.id]: { status: "ready", data: result.analysis } }));
+    } catch (err) {
+      setAnalyses(current => ({
+        ...current,
+        [article.id]: { status: "error", error: err instanceof Error ? err.message : "Analysis failed." },
+      }));
+    }
+  };
 
   const topicCount = new Set(articles.map(item => item.topicId)).size;
   const researchCount = articles.filter(item => item.category === "research").length;
@@ -199,10 +228,32 @@ export default function HomePage() {
                 {error && <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-xs text-rose-200"><AlertCircle size={15}/>{error}</div>}
                 {loading ? <div className="grid gap-3 md:grid-cols-2">{Array.from({length:4}).map((_,i)=><div key={i} className="h-48 animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.025] p-5"><div className="h-3 w-24 rounded bg-white/10"/><div className="mt-5 h-4 w-full rounded bg-white/10"/><div className="mt-2 h-4 w-3/4 rounded bg-white/10"/><div className="mt-5 h-3 w-1/2 rounded bg-white/10"/></div>)}</div>
                 : filteredArticles.length === 0 ? <div className="rounded-xl border border-dashed border-white/10 px-5 py-14 text-center"><Search className="mx-auto text-slate-600" size={22}/><p className="mt-3 text-sm font-medium text-slate-300">No matching signals</p><p className="mt-1 text-xs text-slate-500">Try another search or clear one of your filters.</p><button onClick={() => {setSearchQuery("");setSelectedTopic("all");setSelectedCategory("all");}} className="mt-4 text-xs font-medium text-indigo-300 hover:text-white">Clear all filters</button></div>
-                : <div className="grid gap-3 md:grid-cols-2">{filteredArticles.map(article => <a key={article.id} href={article.url} target="_blank" rel="noopener noreferrer" className="group flex min-h-[205px] flex-col justify-between rounded-xl border border-white/[0.07] bg-[#0d1525] p-4 transition duration-200 hover:-translate-y-0.5 hover:border-indigo-300/30 hover:bg-[#111c30]">
-                  <div><div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-md border border-indigo-300/15 bg-indigo-300/[0.08] px-2 py-1 text-[10px] font-medium text-indigo-200">{article.topicLabel}</span><span className={`rounded-md px-2 py-1 text-[9px] font-semibold uppercase tracking-wider ${article.category === "research" ? "bg-emerald-300/10 text-emerald-300" : "bg-sky-300/10 text-sky-300"}`}>{article.category === "research" ? "Research" : "News"}</span></div><h3 className="text-sm font-semibold leading-5 text-slate-100 transition group-hover:text-indigo-200">{article.title}</h3>{article.summary && <p className="mt-2 line-clamp-3 text-[11px] leading-[1.65] text-slate-400">{article.summary}</p>}</div>
-                  <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-3"><div className="min-w-0"><p className="truncate text-[10px] font-medium text-slate-300">{article.source}</p><p className="mt-1 text-[10px] text-slate-600">{formatDate(article.publishedAt)}</p></div><ExternalLink size={14} className="shrink-0 text-slate-600 transition group-hover:text-indigo-300"/></div>
-                </a>)}</div>}
+                : <div className="grid gap-3 md:grid-cols-2">{filteredArticles.map(article => {
+                  const analysis = analyses[article.id];
+                  return <article key={article.id} className="flex min-h-[205px] flex-col rounded-xl border border-white/[0.07] bg-[#0d1525] p-4 transition duration-200 hover:border-indigo-300/30">
+                    <div className="flex-1">
+                      <div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-md border border-indigo-300/15 bg-indigo-300/[0.08] px-2 py-1 text-[10px] font-medium text-indigo-200">{article.topicLabel}</span><span className={`rounded-md px-2 py-1 text-[9px] font-semibold uppercase tracking-wider ${article.category === "research" ? "bg-emerald-300/10 text-emerald-300" : "bg-sky-300/10 text-sky-300"}`}>{article.category === "research" ? "Research" : "News"}</span></div>
+                      <h3 className="text-sm font-semibold leading-5 text-slate-100">{article.title}</h3>
+                      {article.summary && <p className="mt-2 line-clamp-3 text-[11px] leading-[1.65] text-slate-400">{article.summary}</p>}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-3">
+                      <div className="min-w-0"><p className="truncate text-[10px] font-medium text-slate-300">{article.source}</p><p className="mt-1 text-[10px] text-slate-600">{formatDate(article.publishedAt)}</p></div>
+                      <a href={article.url} target="_blank" rel="noopener noreferrer" aria-label={`Read original article: ${article.title}`} className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-300 hover:text-indigo-200">Source <ExternalLink size={12}/></a>
+                    </div>
+                    <button onClick={() => analyseArticle(article)} disabled={analysis?.status === "loading" || analysis?.status === "ready"} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300/20 bg-violet-300/[0.08] px-3 py-2.5 text-[11px] font-semibold text-violet-200 transition hover:bg-violet-300/[0.14] disabled:cursor-not-allowed disabled:opacity-70">
+                      <Sparkles size={13}/>{analysis?.status === "loading" ? "Analysing with Gemini…" : analysis?.status === "ready" ? "AI analysis ready" : "Analyse with AI"}
+                    </button>
+                    {analysis?.status === "error" && <p role="alert" className="mt-2 text-[10px] text-rose-300">{analysis.error}</p>}
+                    {analysis?.status === "ready" && analysis.data && <div className="mt-3 space-y-3 rounded-lg border border-violet-300/15 bg-violet-300/[0.045] p-3">
+                      <div><p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">What happened</p><p className="mt-1 text-[11px] leading-relaxed text-slate-300">{analysis.data.whatHappened}</p></div>
+                      <div><p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">Why it matters</p><p className="mt-1 text-[11px] leading-relaxed text-slate-300">{analysis.data.whyItMatters}</p></div>
+                      <div><p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">Potential opportunities</p><ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-slate-300">{analysis.data.opportunities.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+                      <div><p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">Risks & uncertainties</p><ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-slate-300">{analysis.data.risks.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+                      <p className="border-t border-white/[0.07] pt-2 text-[10px] leading-relaxed text-slate-500">Evidence note: {analysis.data.confidenceNote}</p>
+                      <p className="text-[9px] text-slate-600">AI-generated interpretation. Check the linked source before making decisions.</p>
+                    </div>}
+                  </article>;
+                })}</div>}
               </div>
 
               <aside className="space-y-4">
