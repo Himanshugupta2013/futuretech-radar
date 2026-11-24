@@ -130,3 +130,43 @@ export async function getArticlesFromMemory(
     return [];
   }
 }
+
+export type ArticlePruneResult = {
+  expired: number;
+  over_limit: number;
+  remaining: number;
+};
+
+/**
+ * Remove articles older than the discovery-time retention window, then keep
+ * only the newest maxRows by crawled_at. The database function is restricted
+ * to the server-side service role.
+ */
+export async function pruneArticlesFromMemory(
+  maxAgeMinutes = 180,
+  maxRows = 200
+): Promise<ArticlePruneResult> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured; article cleanup was not run.");
+  }
+
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/prune_articles`, {
+    method: "POST",
+    headers: supabaseHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({
+      p_max_age_minutes: maxAgeMinutes,
+      p_max_rows: maxRows,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Supabase article cleanup failed: ${res.status} ${errText}`);
+  }
+
+  return (await res.json()) as ArticlePruneResult;
+}
+
