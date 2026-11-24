@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 export const revalidate = 0;
 
 type Analysis = {
@@ -92,7 +93,7 @@ Article summary / excerpt: ${summary}`;
           },
         }),
         cache: "no-store",
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(55000),
       }
     );
 
