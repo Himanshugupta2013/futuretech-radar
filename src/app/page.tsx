@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import {
   Search, RefreshCw, ExternalLink, Sparkles, Newspaper, BookOpen, Radar,
   Clock3, AlertCircle, LayoutDashboard, Bookmark, ChevronRight, Filter,
-  ArrowUpRight, Zap, Cpu, Atom, Leaf, Menu, X
+  ArrowUpRight, Zap, Cpu, Atom, Leaf, Menu, X, Sun, Moon
 } from "lucide-react";
 
 interface FutureTopic {
@@ -64,6 +64,17 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [theme, setTheme] = useState<\"dark\" | \"light\">(\"dark\");
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(\"futuretech-radar-theme\");
+    if (savedTheme === \"light\" || savedTheme === \"dark\") setTheme(savedTheme);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(\"futuretech-radar-theme\", theme);
+  }, [theme]);
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchArticles = useCallback(async (topicId: string, category: "all" | "news" | "research") => {
