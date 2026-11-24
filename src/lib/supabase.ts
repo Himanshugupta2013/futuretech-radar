@@ -1,39 +1,63 @@
 import type { FeedItem } from "./crawler";
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseUrl = process.env.SUPABASE_URL || "";
+// Preview uses its own isolated table; Production keeps the default articles table.
+const articlesTable = process.env.SUPABASE_ARTICLES_TABLE === "preview_articles" ? "preview_articles" : "articles";
+const pruneRpc = articlesTable === "preview_articles" ? "prune_preview_articles" : "prune_articles";
+// Prefer Supabase's current secret key. Keep the legacy service-role variable
+// as a migration fallback, but never expose either value to browser code.
+const supabaseSecretKey =
+  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  return Boolean(supabaseUrl && supabaseSecretKey);
+}
+
+function supabaseHeaders(extra: Record<string, string> = {}): HeadersInit {
+  return {
+    // Supabase's new sb_secret_* keys are opaque API keys, not JWTs.
+    // Send them as apikey only; do not put them in Authorization: Bearer.
+    apikey: supabaseSecretKey,
+    ...extra,
+  };
 }
 
 export async function isMemoryStale(_topic: string, maxAgeMinutes = 60): Promise<boolean> {
   if (!isSupabaseConfigured()) return true;
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/articles?select=created_at&order=created_at.desc&limit=1`, {
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) return true;
+    // The articles table uses crawled_at (not created_at).
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/${articlesTable}?select=crawled_at&order=crawled_at.desc&limit=1`,
+      {
+        headers: supabaseHeaders(),
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) {
+      console.error("Supabase freshness check failed:", res.status, await res.text());
+      return true;
+    }
     const data = await res.json();
-    if (!data || data.length === 0) return true;
-    const lastUpdated = new Date(data[0].created_at).getTime();
+    if (!data || data.length === 0 || !data[0].crawled_at) return true;
+    const lastUpdated = new Date(data[0].crawled_at).getTime();
+    if (Number.isNaN(lastUpdated)) return true;
     return (Date.now() - lastUpdated) / (1000 * 60) > maxAgeMinutes;
-  } catch {
+  } catch (error) {
+    console.error("Supabase freshness check error:", error);
     return true;
   }
 }
 
 export async function saveArticlesToMemory(items: FeedItem[], _topic: string): Promise<void> {
-  if (!isSupabaseConfigured() || items.length === 0) return;
+  if (!isSupabaseConfigured()) {
+    console.error(
+      "Supabase save skipped: set SUPABASE_URL and SUPABASE_SECRET_KEY in the server environment."
+    );
+    return;
+  }
+  if (items.length === 0) return;
 
-  // Use service role key for server-side writes to bypass RLS, fallback to anon key if not set
-  const writeKey = supabaseServiceKey || supabaseAnonKey;
-
+  const crawledAt = new Date().toISOString();
   const rows = items.map((item) => ({
     id: item.id,
     title: item.title,
@@ -44,26 +68,30 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
     topic_id: item.topicId,
     topic_label: item.topicLabel,
     category: item.category,
+    crawled_at: crawledAt,
   }));
 
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/articles`, {
+    // url is the articles table's primary key, so explicitly upsert on url.
+    const res = await fetch(`${supabaseUrl}/rest/v1/${articlesTable}?on_conflict=url`, {
       method: "POST",
-      headers: {
-        apikey: writeKey,
-        Authorization: `Bearer ${writeKey}`,
+      headers: supabaseHeaders({
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-conflict",
-      },
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      }),
       body: JSON.stringify(rows),
+      cache: "no-store",
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Supabase upsert error:", errText);
+      throw new Error(`Supabase article upsert failed: ${res.status} ${errText}`);
     }
+
+    console.log(`Supabase saved/upserted ${rows.length} article rows.`);
   } catch (error) {
     console.error("Failed to save articles to Supabase:", error);
+    throw error;
   }
 }
 
@@ -74,19 +102,19 @@ export async function getArticlesFromMemory(
   if (!isSupabaseConfigured()) return [];
 
   try {
-    let queryUrl = `${supabaseUrl}/rest/v1/articles?select=*&order=published_at.desc&limit=60`;
-    if (topic !== "all") queryUrl += `&topic_id=eq.${topic}`;
+    let queryUrl = `${supabaseUrl}/rest/v1/${articlesTable}?select=*&order=published_at.desc&limit=60`;
+    if (topic !== "all") queryUrl += `&topic_id=eq.${encodeURIComponent(topic)}`;
     if (category !== "all") queryUrl += `&category=eq.${category}`;
 
     const res = await fetch(queryUrl, {
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
+      headers: supabaseHeaders(),
       cache: "no-store",
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error("Supabase article read failed:", res.status, await res.text());
+      return [];
+    }
     const data = await res.json();
 
     return (data || []).map((row: any) => ({
@@ -100,7 +128,48 @@ export async function getArticlesFromMemory(
       topicLabel: row.topic_label,
       category: row.category,
     }));
-  } catch {
+  } catch (error) {
+    console.error("Failed to read articles from Supabase:", error);
     return [];
   }
 }
+
+export type ArticlePruneResult = {
+  expired: number;
+  over_limit: number;
+  remaining: number;
+};
+
+/**
+ * Remove articles older than the discovery-time retention window, then keep
+ * only the newest maxRows by crawled_at. The database function is restricted
+ * to the server-side service role.
+ */
+export async function pruneArticlesFromMemory(
+  maxAgeMinutes = 180,
+  maxRows = 200
+): Promise<ArticlePruneResult> {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured; article cleanup was not run.");
+  }
+
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${pruneRpc}`, {
+    method: "POST",
+    headers: supabaseHeaders({
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({
+      p_max_age_minutes: maxAgeMinutes,
+      p_max_rows: maxRows,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Supabase article cleanup failed: ${res.status} ${errText}`);
+  }
+
+  return (await res.json()) as ArticlePruneResult;
+}
+
