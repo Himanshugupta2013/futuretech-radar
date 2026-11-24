@@ -35,16 +35,23 @@ async function fetchHackerNewsArticles(topic: FutureTopic, limit = 5): Promise<F
     const stories = await Promise.all(storyPromises);
     const validStories = stories.filter((s) => s && s.title && s.url);
 
-    // Simple keyword matching against topic query terms
-    const keywords = topic.newsQuery.toLowerCase().split(" ");
+    // Match meaningful phrases/terms only. Never fill a category with unrelated stories.
+    const query = topic.newsQuery.toLowerCase();
+    const phrases = [...query.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    const stopWords = new Set(["or", "and", "the", "for", "with", "into", "from", "about", "business", "technology", "breakthrough"]);
+    const terms = query
+      .replace(/"[^"]+"/g, " ")
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 2 && !stopWords.has(word));
+
     const matched = validStories.filter((story) => {
       const text = (story.title + " " + (story.text || "")).toLowerCase();
-      return keywords.some((kw) => text.includes(kw));
+      const phraseMatch = phrases.some((phrase) => text.includes(phrase));
+      const termMatches = terms.filter((term) => text.includes(term)).length;
+      return phraseMatch || (terms.length > 0 && termMatches >= Math.min(2, terms.length));
     });
 
-    const itemsToUse = matched.length > 0 ? matched : validStories.slice(0, limit);
-
-    return itemsToUse.slice(0, limit).map((story, idx) => ({
+    return matched.slice(0, limit).map((story, idx) => ({
       id: `hn-${topic.id}-${story.id || idx}`,
       title: story.title,
       summary: `Hacker News discussion and coverage regarding ${topic.name}. Score: ${story.score || 0} points.`,
