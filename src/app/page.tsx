@@ -228,7 +228,7 @@ export default function HomePage() {
                 {error && <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-xs text-rose-200"><AlertCircle size={15}/>{error}</div>}
                 {loading ? <div className="grid gap-3 md:grid-cols-2">{Array.from({length:4}).map((_,i)=><div key={i} className="h-48 animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.025] p-5"><div className="h-3 w-24 rounded bg-white/10"/><div className="mt-5 h-4 w-full rounded bg-white/10"/><div className="mt-2 h-4 w-3/4 rounded bg-white/10"/><div className="mt-5 h-3 w-1/2 rounded bg-white/10"/></div>)}</div>
                 : filteredArticles.length === 0 ? <div className="rounded-xl border border-dashed border-white/10 px-5 py-14 text-center"><Search className="mx-auto text-slate-600" size={22}/><p className="mt-3 text-sm font-medium text-slate-300">No matching signals</p><p className="mt-1 text-xs text-slate-500">Try another search or clear one of your filters.</p><button onClick={() => {setSearchQuery("");setSelectedTopic("all");setSelectedCategory("all");}} className="mt-4 text-xs font-medium text-indigo-300 hover:text-white">Clear all filters</button></div>
-                : <div className="grid gap-3 md:grid-cols-2">{filteredArticles.map(article => {
+                : <div className="grid items-start gap-3 md:grid-cols-2">{filteredArticles.map(article => {
                   const analysis = analyses[article.id];
                   return <article key={article.id} className="flex min-h-[205px] flex-col rounded-xl border border-white/[0.07] bg-[#0d1525] p-4 transition duration-200 hover:border-indigo-300/30">
                     <div className="flex-1">
