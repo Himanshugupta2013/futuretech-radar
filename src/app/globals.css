@@ -49,3 +49,31 @@ button, input { font: inherit; }
 .theme-light input::placeholder { color: #8795a8 !important; }
 .theme-light header { background: rgba(255,255,255,.9) !important; }
 .theme-light .app-shell button:hover { filter: brightness(.97); }
+
+
+/* Step 1 UX polish: stronger light-theme contrast and keyboard focus */
+.theme-light [class~="text-indigo-100"] { color: #312e81 !important; }
+.theme-light [class~="text-indigo-200"] { color: #3730a3 !important; }
+.theme-light [class~="text-indigo-300"] { color: #4338ca !important; }
+.theme-light [class~="text-violet-300"] { color: #6d28d9 !important; }
+.theme-light [class~="text-emerald-300"] { color: #047857 !important; }
+.theme-light [class~="text-sky-300"] { color: #0369a1 !important; }
+.theme-light [class~="text-cyan-300"] { color: #0e7490 !important; }
+.theme-light [class~="text-amber-300"] { color: #b45309 !important; }
+.theme-light button.bg-indigo-500,
+.theme-light button.bg-indigo-500:hover { color: #ffffff !important; }
+.theme-light [class*="ring-indigo-300"] { --tw-ring-color: rgba(79, 70, 229, .24) !important; }
+.theme-light input { background-color: #ffffff !important; border-color: #cbd5e1 !important; }
+.theme-light input:focus { border-color: #818cf8 !important; }
+.theme-light aside .bg-white\/\\[0\\.025\\] { background: #f8fafc !important; }
+.theme-light .app-shell button:focus-visible,
+.theme-light .app-shell a:focus-visible,
+.theme-dark .app-shell button:focus-visible,
+.theme-dark .app-shell a:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+}
+@media (max-width: 639px) {
+  .app-shell main header { padding-bottom: 0; }
+  .app-shell main header > div:first-child { min-height: 68px; }
+}
