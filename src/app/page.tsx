@@ -251,7 +251,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => fetchArticles(selectedTopic, selectedCategory, true)}
+              onClick={() => fetchArticles(selectedTopic, selectedCategory, false)}
               disabled={loading}
               className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition"
             >
