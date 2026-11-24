@@ -100,32 +100,66 @@ export async function generateArticleIntelligence(
     "Excerpt: " + boundedText(article.summary, 5000)
   ].join("\n");
 
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" + ARTICLE_INTELLIGENCE_MODEL + ":generateContent",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-          maxOutputTokens: 1400
-        }
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(50000)
+  const endpoint =
+    "https://generativelanguage.googleapis.com/v1beta/models/" + ARTICLE_INTELLIGENCE_MODEL + ":generateContent";
+  const requestBody = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.1,
+      maxOutputTokens: 1400
     }
-  );
+  });
 
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 800);
-    console.error("Gemini intelligence request failed:", response.status, detail);
-    if (response.status === 429) throw new Error("Gemini quota or rate limit reached.");
-    throw new Error("Gemini intelligence request failed with status " + response.status + ".");
+  // Two attempts keep the batch within the Preview function's 60-second budget.
+  // Retry only transient service/rate-limit failures; never retry malformed responses or auth errors.
+  const maxAttempts = 2;
+  let response: Response | undefined;
+  let lastNetworkError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: requestBody,
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000)
+      });
+      if (response.ok) break;
+
+      const retryable = [429, 500, 502, 503, 504].includes(response.status);
+      if (!retryable || attempt === maxAttempts) {
+        const detail = (await response.text()).slice(0, 800);
+        console.error("Gemini intelligence request failed:", response.status, detail);
+        if (response.status === 429) throw new Error("Gemini quota or rate limit reached after retry.");
+        throw new Error("Gemini intelligence request failed with status " + response.status + ".");
+      }
+
+      // Do not wait indefinitely on provider Retry-After values in a short Preview function.
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+    } catch (error) {
+      if (error instanceof Error && /Gemini (quota|intelligence request failed)/.test(error.message)) {
+        throw error;
+      }
+      lastNetworkError = error;
+      if (attempt === maxAttempts) {
+        console.error("Gemini intelligence request timed out or failed at network level:", error);
+        throw new Error("Gemini request timed out or could not connect after retry.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+    }
+  }
+
+  if (!response?.ok) {
+    throw new Error(
+      lastNetworkError instanceof Error
+        ? "Gemini request failed after retry."
+        : "Gemini did not return a successful response after retry."
+    );
   }
 
   const payload = await response.json();
