@@ -82,13 +82,13 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Supabase article upsert failed:", res.status, errText);
-      return;
+      throw new Error(`Supabase article upsert failed: ${res.status} ${errText}`);
     }
 
     console.log(`Supabase saved/upserted ${rows.length} article rows.`);
   } catch (error) {
     console.error("Failed to save articles to Supabase:", error);
+    throw error;
   }
 }
 
