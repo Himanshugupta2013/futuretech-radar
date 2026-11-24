@@ -2,7 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #090d16;
-  color: #f1f5f9;
+:root {
+  color-scheme: dark;
+  background: #080d18;
 }
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: #080d18;
+  color: #f1f5f9;
+  font-family: Arial, Helvetica, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+button, input { font: inherit; }
+::selection { background: rgba(129, 140, 248, 0.35); color: #fff; }
