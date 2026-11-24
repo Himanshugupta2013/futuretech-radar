@@ -3,6 +3,7 @@ import { crawlFutureTech } from "@/lib/crawler";
 import {
   isSupabaseConfigured,
   saveArticlesToMemory,
+  pruneArticlesFromMemory,
 } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +34,12 @@ export async function GET(request: NextRequest) {
   try {
     const articles = await crawlFutureTech("all", "all");
     await saveArticlesToMemory(articles, "all");
+    const cleanup = await pruneArticlesFromMemory(180, 200);
 
     return NextResponse.json({
       success: true,
       crawled: articles.length,
+      cleanup,
       completedAt: new Date().toISOString(),
     });
   } catch (error) {
