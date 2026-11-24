@@ -37,7 +37,7 @@ async function fetchHackerNewsArticles(topic: FutureTopic, limit = 5): Promise<F
 
     // Match meaningful phrases/terms only. Never fill a category with unrelated stories.
     const query = topic.newsQuery.toLowerCase();
-    const phrases = [...query.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    const phrases = (query.match(/"([^"]+)"/g) || []).map((phrase) => phrase.slice(1, -1));
     const stopWords = new Set(["or", "and", "the", "for", "with", "into", "from", "about", "business", "technology", "breakthrough"]);
     const terms = query
       .replace(/"[^"]+"/g, " ")
