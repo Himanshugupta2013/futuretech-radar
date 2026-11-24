@@ -428,3 +428,57 @@ This revision was produced from read-only inspection of GitHub, Vercel, Supabase
 No Supabase schema, migration history, Edge Function, Cron job, secret, Vercel environment variable, Production deployment or Production database was changed.
 
 **Revision 1 conclusion:** The application Preview build is healthy, but scheduled orchestration is not operational. The immediate next Phase 1 task is to safely align the relay destination and validate the complete authentication/method contract before enabling any schedule.
+
+
+---
+
+# Revision 2 — Preview relay destination alignment
+
+**Change date:** 2026-11-24  
+**Supabase Edge Function:** `preview-news-relay`  
+**Function version:** 11  
+**Status:** Deployed and source-verified; end-to-end authenticated invocation not yet tested.
+
+## R2.1 Change made
+
+Updated the hard-coded upstream URL in `preview-news-relay` from the security-branch deployment to the stable Vercel Git branch alias for the executive dashboard feature branch:
+
+- Previous: `https://futuretech-radar-git-fix-supabase-secure-ingestion-hg8-de2c.vercel.app/api/cron/news`
+- Current: `https://futuretech-radar-git-feat-executive-dashboard-redesign-hg8-de2c.vercel.app/api/cron/news`
+
+The stable branch alias resolves to the latest READY deployment for `feat/executive-dashboard-redesign`. At the time of this change, that deployment was built from commit `48ca1a16dbd9607117a20895aae2d85f211ad4b4`.
+
+## R2.2 Contract verification
+
+Before changing the relay:
+- The current feature Preview deployment was confirmed READY.
+- The feature branch and security branch both contained the same `src/app/api/cron/news/route.ts` blob (SHA `74b397bfb0361497b093bcb8c66d05c924164258`).
+- That route accepts GET, requires `Authorization: Bearer <CRON_SECRET>`, verifies Supabase configuration, crawls sources, saves articles, and applies retention cleanup.
+- The relay continues to accept POST from its caller, validate `x-relay-secret`, and forward GET to Vercel with the Cron bearer token and Vercel protection-bypass header.
+- Preview environment variable names were checked without revealing values: `GEMINI_API_KEY`, `SUPABASE_ARTICLES_TABLE`, `CRON_SECRET`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`.
+
+## R2.3 Deployment verification
+
+- Edge Function `preview-news-relay` is ACTIVE.
+- Deployed version: 11.
+- `verify_jwt` remains false, as before; function-level shared-secret authentication remains in place.
+- Re-fetched deployed function source and confirmed the new stable feature-branch alias is present.
+- No secret values were retrieved, displayed or changed.
+
+## R2.4 Explicit limits of verification
+
+This is a configuration alignment, not yet a complete end-to-end ingestion test:
+- We did not invoke the relay with its shared secret.
+- We did not verify the relay's authenticated upstream response.
+- We did not enable any `pg_cron` schedule.
+- We did not change database schema, migration history, Vercel environment variables or Production.
+- The current `cron.job` table was previously verified empty; no schedule is enabled.
+
+## R2.5 Next acceptance steps
+
+1. Safely test relay authentication and its upstream Vercel request without enabling recurring scheduling.
+2. Verify the response payload and confirm the intended Preview tables are the only tables changed.
+3. Re-check retention and row-cap outcomes.
+4. Only after successful manual acceptance, design and enable the Preview-only schedule with explicit confirmation.
+
+**Revision 2 conclusion:** The relay's destination now aligns with the active executive dashboard Preview branch. The function is deployed and its source is verified. Do not call scheduled ingestion operational until an authenticated end-to-end relay test passes.
