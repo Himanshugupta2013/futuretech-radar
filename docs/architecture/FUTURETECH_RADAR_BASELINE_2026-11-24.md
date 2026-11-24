@@ -230,3 +230,201 @@ For every subsequent change:
 - Keep Production unchanged unless explicitly authorized.
 
 **Baseline status:** Accepted as the architecture reference snapshot for FutureTech Radar as of 24 November 2026. Live service state must be rechecked before each implementation phase.
+
+
+---
+
+# Revision 1 — Latest verified status and architecture update
+
+**Revision date:** 2026-11-24  
+**Revision commit:** To be recorded by GitHub after this update.  
+**Current feature branch head before this documentation update:** `104aa9b9615fa5b1466ce02802b49d4066d8f0dc`  
+**Latest Preview deployment:** `dpl_wGUE5ruGqL5QQEd1hYnpmXKwL1cy`  
+**Latest Preview URL:** `https://futuretech-radar-cgm1ppgyn-hg8-de2c.vercel.app`  
+**Preview state:** READY  
+**Production state:** READY, still deployed from `main` commit `0e00325ff8f73b2e30abd6230bd9ef58f6aa3a85`.
+
+This revision supplements, and does not erase, the original review snapshot above. It records the latest verification after the baseline document was committed.
+
+## R1.1 GitHub and Vercel state
+
+- Feature branch is 35 commits ahead of `main`, 0 behind, at this verification.
+- Feature branch head before this documentation revision: `104aa9b9615fa5b1466ce02802b49d4066d8f0dc`.
+- Latest Preview deployment is READY and built from that same commit.
+- Production remains on `main`; no merge or Production promotion occurred.
+- PR #1 remains open, Draft, unmerged and mergeable. It targets `main` from `fix/supabase-secure-ingestion`; its head at verification was `cae2d2be9cdd21657d5ea8392351bf287a9924d3`.
+- Feature branch `vercel.json` currently contains an empty JSON object. No Vercel Cron schedule is configured there.
+
+Latest Preview URL: https://futuretech-radar-cgm1ppgyn-hg8-de2c.vercel.app
+
+## R1.2 Supabase live snapshot
+
+The following values were freshly queried:
+
+| Table | Rows |
+|---|---:|
+| `public.articles` | 42 |
+| `public.preview_articles` | 36 |
+| `public.preview_article_intelligence` | 2 |
+| `public.sync_state` | 0 |
+
+Preview source breakdown:
+- 32 `research` rows from `arXiv Preprint`.
+- 4 `news` rows from `Hacker News`.
+- Latest `crawled_at` for both groups at query time: `2026-11-24 10:10:36.313+00`.
+
+Intelligence queue:
+- 2 rows, both `failed`.
+- `attempt_count` is 2 for both.
+- No completed or skipped intelligence records were present.
+
+Scheduling:
+- Fresh query of `cron.job` returned an empty result: zero active or inactive jobs were listed.
+- `pg_cron` and `pg_net` extensions remain installed.
+- Edge Function `preview-news-relay` is ACTIVE, version 10, with `verify_jwt=false`.
+
+Migration history:
+- Remote migration list currently returns only:
+  - `20261124081546_add_server_only_article_retention`
+  - `20261124083034_enable_cron_http_extensions`
+- The GitHub migration `20261124123000_create_preview_article_intelligence.sql` is not represented in that returned remote migration list. Treat this as migration-history drift until reconciled. Do not blindly replay or mark migrations applied without comparing the live schema and migration contents.
+
+## R1.3 Relay configuration — confirmed mismatch remains
+
+The active `preview-news-relay` Edge Function source still contains this hard-coded upstream URL:
+
+`https://futuretech-radar-git-fix-supabase-secure-ingestion-hg8-de2c.vercel.app/api/cron/news`
+
+It therefore still targets the security branch deployment, not the current executive dashboard feature Preview.
+
+The relay:
+- Accepts POST only.
+- Checks `x-relay-secret` against `RELAY_SHARED_SECRET`.
+- Requires `VERCEL_PROTECTION_BYPASS` and `CRON_SECRET`.
+- Calls the Vercel ingestion endpoint with GET, forwarding the Cron bearer token and Vercel protection bypass header.
+- Uses a 120-second request timeout.
+
+No relay source or secret was changed in this review. Do not point the relay at a new URL until the destination deployment's route, method, environment variables, protection settings and expected response have been checked together.
+
+## R1.4 Code-level intelligence behavior — clarification
+
+The current feature-branch source confirms:
+
+### Intelligence processor
+- `POST /api/cron/process-intelligence` requires `Authorization: Bearer <CRON_SECRET>`.
+- It reads the two newest Preview research articles, rather than draining a durable pending queue.
+- It inserts a `pending` row with `article_url` conflict handling.
+- It attempts an atomic claim by changing `pending` to `processing`.
+- It increments `attempt_count` when it successfully claims a pending row.
+- It persists the structured result into `preview_article_intelligence`.
+- Failures are marked `failed`.
+
+### Gemini retry behavior
+The intelligence library does have a bounded in-request retry:
+- Up to two Gemini attempts for transient HTTP statuses (429, 500, 502, 503, 504) and network failures.
+- Approximately 800 ms incremental delay between those attempts.
+- The request timeout is 12 seconds per attempt.
+
+This is not durable retry scheduling. A row marked `failed` is not automatically scheduled to return to `pending` after a later delay. The two currently failed rows remain failed with attempt count 2.
+
+The accurate design gap is therefore: **bounded immediate retry exists; durable delayed retry, retry timestamps, stale-lock recovery and a queue-draining worker do not yet exist.**
+
+### Evidence quality
+- arXiv records contain the abstract supplied by the arXiv feed.
+- Hacker News records currently construct a summary from the topic name and discussion score; this is not the underlying article's factual excerpt.
+- The intelligence processor currently selects research rows only, which avoids sending the current Hacker News synthetic summary through this specific persisted batch. Preserve this distinction in future source adapters.
+
+### Crawler efficiency
+The current crawler implementation fetches Hacker News top-story IDs and story records inside the per-topic function. Since that function is called for each topic, the same shared top-story list and story records are fetched repeatedly. The planned optimization—fetch once, then classify/match against all topics—remains outstanding.
+
+## R1.5 Updated current-state architecture
+
+~~~mermaid
+flowchart TD
+    B[Browser / Dashboard] --> R[GET /api/news]
+    B --> A[POST /api/analyze]
+    B --> T[Preview-only test trigger]
+    R --> DB[(Supabase article tables)]
+    A --> G[Gemini API]
+    T --> P[POST process-intelligence]
+    P --> G
+    P --> I[(preview_article_intelligence)]
+
+    E[Supabase Edge Function preview-news-relay] -->|POST with relay secret| V[Hard-coded security-branch Vercel URL]
+    V --> N[GET /api/cron/news with Cron bearer + protection bypass]
+    N --> C[Hacker News + arXiv crawler]
+    C --> DB
+
+    J[(pg_cron)] -. zero jobs at verification .-> E
+~~~
+
+The diagram explicitly shows that the Edge relay exists, but no pg_cron job currently invokes it. The Preview test trigger is a separate manual path and does not establish scheduled processing.
+
+## R1.6 Updated target low-level design
+
+The intended architecture remains:
+
+1. **Source adapters:** Hacker News, arXiv and future sources return normalized source records with provenance and evidence type.
+2. **Ingestion service:** fetch shared upstream datasets efficiently, normalize URLs, deduplicate, store raw source metadata and genuine excerpts, and apply retention.
+3. **Durable intelligence queue:** each article/content version gets a queue record with status, attempt count, next retry timestamp, lock timestamp, worker identifier and failure classification.
+4. **Worker:** atomically claims eligible pending records, calls Gemini, validates JSON against the approved topic catalogue, and persists the result.
+5. **Retry controller:** schedules bounded delayed retries for transient failures; permanent failures go to manual review. No function should sleep for minutes while holding execution open.
+6. **Read API:** serves article and intelligence records to the dashboard without exposing privileged credentials.
+7. **Observability:** execution IDs, source counts, queue age, Gemini status/latency, retries, failures and last-success timestamps.
+8. **Environment isolation:** Preview and Production have separate database tables/configuration, relay destinations, schedules and secrets.
+
+### Queue lifecycle target
+
+```text
+pending -> processing -> completed
+                     -> skipped
+                     -> retry_wait -> pending
+                     -> dead_letter / manual_review
+
+stale processing lock -> recoverable pending/retry state
+```
+
+### Target data additions (not yet implemented)
+
+- `next_retry_at`
+- `last_attempt_at`
+- `locked_at`
+- `locked_by`
+- `last_http_status`
+- `failure_class`
+- `completed_at`
+- Optional content-version or analysis-run identifier if multiple analyses per article must be retained.
+
+These are design proposals only; no schema changes were made as part of this revision.
+
+## R1.7 Roadmap status
+
+| Phase 1 work item | Latest status |
+|---|---|
+| Verify current feature Preview deployment | Complete — READY |
+| Confirm relay destination mismatch | Complete — mismatch confirmed |
+| Align relay destination | Not started |
+| Verify Preview secrets without exposing values | Previously verified present; recheck after destination decision |
+| Correct scheduled endpoint routing | Not started |
+| Reconcile migration history | Not started |
+| Configure Preview-only pg_cron jobs | Not started; zero jobs found |
+| Verify scheduled ingestion end to end | Not started |
+| Verify retention and row cap end to end | Not started in this revision |
+
+Phase 2:
+- Immediate bounded Gemini retry: implemented.
+- Durable delayed retry: not implemented.
+- Pending queue drain: not implemented.
+- Stale-lock recovery: not implemented.
+- Consolidated Gemini workflow: not implemented.
+- Operational metrics: partial application logs only; no complete operational dashboard.
+
+Phases 3–5 remain planned.
+
+## R1.8 Change and safety record
+
+This revision was produced from read-only inspection of GitHub, Vercel, Supabase and the source/configuration evidence described above. The only repository write associated with this revision is this documentation update on `feat/executive-dashboard-redesign).
+
+No Supabase schema, migration history, Edge Function, Cron job, secret, Vercel environment variable, Production deployment or Production database was changed.
+
+**Revision 1 conclusion:** The application Preview build is healthy, but scheduled orchestration is not operational. The immediate next Phase 1 task is to safely align the relay destination and validate the complete authentication/method contract before enabling any schedule.
