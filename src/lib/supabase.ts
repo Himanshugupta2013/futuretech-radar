@@ -1,6 +1,9 @@
 import type { FeedItem } from "./crawler";
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
+// Preview uses its own isolated table; Production keeps the default articles table.
+const articlesTable = process.env.SUPABASE_ARTICLES_TABLE === "preview_articles" ? "preview_articles" : "articles";
+const pruneRpc = articlesTable === "preview_articles" ? "prune_preview_articles" : "prune_articles";
 // Prefer Supabase's current secret key. Keep the legacy service-role variable
 // as a migration fallback, but never expose either value to browser code.
 const supabaseSecretKey =
@@ -24,7 +27,7 @@ export async function isMemoryStale(_topic: string, maxAgeMinutes = 60): Promise
   try {
     // The articles table uses crawled_at (not created_at).
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/articles?select=crawled_at&order=crawled_at.desc&limit=1`,
+      `${supabaseUrl}/rest/v1/${articlesTable}?select=crawled_at&order=crawled_at.desc&limit=1`,
       {
         headers: supabaseHeaders(),
         cache: "no-store",
@@ -70,7 +73,7 @@ export async function saveArticlesToMemory(items: FeedItem[], _topic: string): P
 
   try {
     // url is the articles table's primary key, so explicitly upsert on url.
-    const res = await fetch(`${supabaseUrl}/rest/v1/articles?on_conflict=url`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/${articlesTable}?on_conflict=url`, {
       method: "POST",
       headers: supabaseHeaders({
         "Content-Type": "application/json",
@@ -99,7 +102,7 @@ export async function getArticlesFromMemory(
   if (!isSupabaseConfigured()) return [];
 
   try {
-    let queryUrl = `${supabaseUrl}/rest/v1/articles?select=*&order=published_at.desc&limit=60`;
+    let queryUrl = `${supabaseUrl}/rest/v1/${articlesTable}?select=*&order=published_at.desc&limit=60`;
     if (topic !== "all") queryUrl += `&topic_id=eq.${encodeURIComponent(topic)}`;
     if (category !== "all") queryUrl += `&category=eq.${category}`;
 
@@ -150,7 +153,7 @@ export async function pruneArticlesFromMemory(
     throw new Error("Supabase is not configured; article cleanup was not run.");
   }
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/prune_articles`, {
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${pruneRpc}`, {
     method: "POST",
     headers: supabaseHeaders({
       "Content-Type": "application/json",
