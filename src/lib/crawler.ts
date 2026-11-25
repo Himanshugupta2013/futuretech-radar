@@ -80,14 +80,14 @@ async function fetchArxivForTopic(topic: FutureTopic, limit = 4): Promise<FeedIt
     }
 
     const xml = await res.text();
-    const entries = xml.match(/<entry>([\\s\\S]*?)<\\/entry>/g) || [];
+    const entries = xml.match(/<entry>([\s\S]*?)<\/entry>/g) || [];
     return entries.map((entryXml, idx) => {
-      const titleMatch = entryXml.match(/<title>([\\s\\S]*?)<\\/title>/);
-      const summaryMatch = entryXml.match(/<summary>([\\s\\S]*?)<\\/summary>/);
-      const idMatch = entryXml.match(/<id>([\\s\\S]*?)<\\/id>/);
-      const publishedMatch = entryXml.match(/<published>([\\s\\S]*?)<\\/published>/);
-      const title = titleMatch ? titleMatch[1].replace(/\\s+/g, " ").trim() : "Research Paper";
-      const summary = summaryMatch ? summaryMatch[1].replace(/\\s+/g, " ").trim() : "";
+      const titleMatch = entryXml.match(/<title>([\s\S]*?)<\/title>/);
+      const summaryMatch = entryXml.match(/<summary>([\s\S]*?)<\/summary>/);
+      const idMatch = entryXml.match(/<id>([\s\S]*?)<\/id>/);
+      const publishedMatch = entryXml.match(/<published>([\s\S]*?)<\/published>/);
+      const title = titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim() : "Research Paper";
+      const summary = summaryMatch ? summaryMatch[1].replace(/\s+/g, " ").trim() : "";
       const idUrl = idMatch ? idMatch[1].trim() : "";
       const published = publishedMatch ? publishedMatch[1].trim() : "";
       return {
