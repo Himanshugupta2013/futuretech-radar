@@ -36,11 +36,12 @@ export async function GET(request: NextRequest) {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const triggerSource = request.headers.has("x-vercel-cron") ? "vercel-cron" : forceRefresh ? "forced-api" : "cache-miss";
+  const syncScope = process.env.VERCEL_ENV === "preview" ? `preview:${topic}` : topic;
   let fetchedCount = 0;
 
   try {
     if (!isSupabaseConfigured()) throw new Error("Supabase is not configured; refusing an untracked crawler run");
-    await createCrawlerRun({ id: runId, triggerSource, scope: topic, startedAt });
+    await createCrawlerRun({ id: runId, triggerSource, scope: syncScope, startedAt });
     console.info("Crawler run started", { runId, triggerSource, topic, startedAt });
 
     const freshItems = await crawlFutureTech(topic, "all");
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
     const persistedCount = await saveArticlesToMemory(freshItems, topic);
     if (persistedCount !== fetchedCount) throw new Error(`Article persistence count mismatch: fetched ${fetchedCount}, persisted ${persistedCount}`);
 
-    await completeCrawlerRun({ id: runId, scope: topic, fetchedCount, persistedCount });
+    await completeCrawlerRun({ id: runId, scope: syncScope, fetchedCount, persistedCount });
     console.info("Crawler run succeeded", { runId, fetchedCount, persistedCount, completedAt: new Date().toISOString() });
 
     const finalArticles = await getArticlesFromMemory(topic, category);
