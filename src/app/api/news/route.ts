@@ -14,6 +14,14 @@ export async function GET(request: NextRequest) {
   const topic = searchParams.get("topic") || "all";
   const typeParam = searchParams.get("type") || "all";
   const forceRefresh = searchParams.get("force") === "true";
+  if (forceRefresh) {
+    const cronSecret = process.env.CRON_SECRET;
+    const authorization = request.headers.get("authorization");
+    if (!cronSecret || authorization !== `Bearer ${cronSecret}`) {
+      console.error("Rejected forced crawler request: missing or invalid CRON_SECRET");
+      return NextResponse.json({ error: "Unauthorized crawler trigger" }, { status: 401 });
+    }
+  }
   const category = typeParam === "news" || typeParam === "research" ? typeParam : "all";
   const existingArticles = isSupabaseConfigured() ? await getArticlesFromMemory(topic, category) : [];
   const shouldCrawl = forceRefresh || existingArticles.length === 0;
