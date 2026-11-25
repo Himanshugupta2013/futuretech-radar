@@ -59,3 +59,5 @@ $$;
 
 revoke all on function public.complete_crawler_run(uuid, text, integer, integer) from public;
 grant execute on function public.complete_crawler_run(uuid, text, integer, integer) to service_role;
+
+notify pgrst, 'reload schema';
