@@ -4,7 +4,7 @@ const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabaseAdminKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabaseReadKey = supabaseAnonKey || supabaseAdminKey;
-const articlesTable = process.env.SUPABASE_ARTICLES_TABLE || "articles";
+const articlesTable = process.env.SUPABASE_ARTICLES_TABLE || (process.env.VERCEL_ENV === "preview" ? "preview_articles" : "articles");
 
 function getRestUrl(path: string): string {
   if (!supabaseUrl || !/^https:\/\//.test(supabaseUrl)) throw new Error("Supabase URL is not configured");
